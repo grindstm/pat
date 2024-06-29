@@ -5,6 +5,10 @@ from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
 
 
+@jit
+def compiled_simulate(medium, time_axis, p0, sensors):
+    return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors)
+
 class Simulator:
     def __init__(self, N, dx, sound_speed, cfl=0.3):
         self.N = N
@@ -41,7 +45,7 @@ class Simulator:
     def simulate(self):
         p0 = jnp.expand_dims(self.p0, -1)
         p0 = FourierSeries(self.p0, self.domain)
-        print(self.medium.domain.N)
+
         p_data = compiled_simulate(self.medium, self.time_axis, p0, self.sensors)
 
         p_data_3d = p_data.reshape(
@@ -52,7 +56,3 @@ class Simulator:
         p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
         self.p_data = p_data_3d
 
-
-@jit
-def compiled_simulate(medium, time_axis, p0, sensors):
-    return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors)
