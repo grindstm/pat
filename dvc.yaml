@@ -1,0 +1,66 @@
+stages:
+  generate_data:
+    cmd: python generate_data.py data/LNet/
+    deps:
+    - generate_data.py
+    params:
+    - generate_data
+    - geometry
+    outs:
+      - data/LNet/:
+          persist: true
+    # always_changed: true
+
+  simulate:
+    cmd: python simulate.py data/LNet/ data/
+    deps:
+    - simulate.py
+    - simulator.py
+    - data/LNet/
+    outs:
+      - data/p0/:
+          persist: true
+      - data/sensors/:
+          persist: true
+      - data/p_data/:
+          persist: true
+    params:
+      - simulate
+      - geometry
+
+  reconstruct:
+    cmd: python reconstruct.py
+    deps:
+    - reconstruct.py
+    outs:
+    - p_r/:
+        persist: true
+    params: 
+      - reconstruct
+      - geometry
+
+  # add_noise:
+  #   cmd: python add_noise.py
+  #   deps:
+  #     - simulated_data/
+  #   outs:
+  #     - noisy_data/
+
+  # train_network:
+  #   cmd: python train_network.py
+  #   deps:
+  #     - noisy_data/
+  #   outs:
+  #     - model/
+  #   metrics_no_cache:
+  #     - metrics/training_metrics.json
+
+  # test_network:
+  #   cmd: python test_network.py
+  #   deps:
+  #     - model/
+  #     - noisy_data/
+  #   outs:
+  #     - test_results/
+  #   metrics_no_cache:
+  #     - metrics/test_metrics.json
