@@ -14,13 +14,16 @@ from matplotlib.colors import LinearSegmentedColormap
 data_path = "data/"
 
 
-def main():
+if __name__ == "__main__":
 
-    # if len(sys.argv) != 2:
+
+    if len(sys.argv) == 2:
     #     print("To view file # e.g. 4: python generate_data.py 4")
     #     sys.exit(1)
-    IN_NUM = sys.argv[1]
-
+        IN_NUM = sys.argv[1]
+    else:
+        IN_NUM = "0"
+        
     show_items = []
     # Load p0
     p0_file = f"{data_path}p0/{IN_NUM}.npy"
@@ -86,10 +89,18 @@ def main():
 
     # -------------------------------------------
 
-
+    # Load p_r
+    p_r_file = f"{data_path}p_r/{IN_NUM}.npy"
+    if os.path.exists(p_r_file):
+        p_r = jnp.load(p_r_file)
+        p_r_vol = Volume(p_r)
+        # p_r_vol.cmap(["white", "b", "g", "r"]).mode(1)
+        show_items.append(p_r_vol)
+        print(f"Loaded {p_r_file}")
+    else:
+        print(f"File {p_r_file} does not exist")
+        
     
     plotter.show(*show_items, interactive=True)
 
 
-if __name__ == "__main__":
-    main()

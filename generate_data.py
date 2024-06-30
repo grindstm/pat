@@ -128,11 +128,12 @@ if __name__ == "__main__":
     # Save vessels
     folder_index = (
         max(
-            [int(filename.split("_")[0]) for filename in os.listdir(OUT_PATH) if filename.split("_")[0].isdigit()],
+            [int(filename.split("_")[0]) for filename in os.listdir(f"{OUT_PATH}LNet/") if filename.split("_")[0].isdigit()],
             default=-1,
         )
         + 1
     )
+    print(folder_index)
 
     for i, vessels in enumerate(vessels_batch):
         filename = f"{i+folder_index}_{n_iters[i]}"
@@ -163,23 +164,25 @@ if __name__ == "__main__":
 
         # Add space for perfectly matched layer (PML) to the vessels
         p0 = add_margin(vessels, N, PML_MARGIN)
+        p0_file = f"{OUT_PATH}p0/{file_index}.npy"
+        jnp.save(p0_file, p0)
+
         p0 = jnp.expand_dims(p0, -1)
         p0 = FourierSeries(p0, domain)
 
         p_data = compiled_simulator(p0)
 
-        p_data_3d = p_data.reshape(
-            int(time_axis.Nt),
-            int(jnp.sqrt(NUM_SENSORS)),
-            int(jnp.sqrt(NUM_SENSORS))
-        )
-        p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
+        # p_data_3d = p_data.reshape(
+        #     int(time_axis.Nt),
+        #     int(jnp.sqrt(NUM_SENSORS)),
+        #     int(jnp.sqrt(NUM_SENSORS))
+        # )
+        # p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
 
         # Save p0, p_data and sensor positions
-        p0_file = f"{OUT_PATH}p0/{file_index}.npy"
-        jnp.save(p0_file, p0)
+        
         p_data_file = f"{OUT_PATH}p_data/{file_index}.npy"
-        jnp.save(p_data_file, p_data_3d)
+        jnp.save(p_data_file, p_data)
         sensors_file = f"{OUT_PATH}sensors/{file_index}.npy"
         jnp.save(sensors_file, sensor_positions)
         print(f"Saved {p0_file}, {p_data_file} and {sensors_file}")
