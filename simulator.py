@@ -3,19 +3,20 @@ from jax import numpy as jnp
 from jwave import FourierSeries
 from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
-
+from functools import partial
 
 @jit
 def compiled_simulate(medium, time_axis, p0, sensors):
     return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors)
 
 class Simulator:
-    def __init__(self, N, dx, sound_speed, cfl=0.3):
+    def __init__(self, N, dx, sound_speed, cfl=0.3, pml_margin=10):
         self.N = N
         self.dx = dx
         self.domain = Domain(N, dx)
         self.sound_speed = sound_speed
-        self.medium = Medium(domain=self.domain, sound_speed=self.sound_speed)
+        self.pml_margin = pml_margin
+        self.medium = Medium(domain=self.domain, sound_speed=self.sound_speed, pml_size=self.pml_margin)
         self.time_axis = TimeAxis.from_medium(self.medium, cfl=cfl)
         self.sensor_positions = None
         self.sensors = None
@@ -43,8 +44,9 @@ class Simulator:
         self.sensors = BLISensors(positions=self.sensor_positions, n=self.N)
 
     def simulate(self):
-        p0 = jnp.expand_dims(self.p0, -1)
-        p0 = FourierSeries(self.p0, self.domain)
+        p0 = 1.0 * jnp.expand_dims(self.p0, -1)
+        p0 = FourierSeries(p0, self.domain)
+        print(p0.on_grid.shape)
 
         p_data = compiled_simulate(self.medium, self.time_axis, p0, self.sensors)
 
