@@ -1,43 +1,43 @@
 stages:
   generate_data:
-    cmd: python generate_data.py data/LNet/
+    cmd: python generate_data.py data/
     deps:
     - generate_data.py
     params:
     - generate_data
     - geometry
+    - simulate
     outs:
       - data/LNet/:
           persist: true
-    # always_changed: true
-
-  simulate:
-    cmd: python simulate.py data/LNet/ data/
-    deps:
-    - simulate.py
-    - simulator.py
-    - data/LNet/
-    outs:
       - data/p0/:
           persist: true
       - data/sensors/:
           persist: true
       - data/p_data/:
           persist: true
-    params:
-      - simulate
-      - geometry
+    # always_changed: true
 
-  reconstruct:
-    cmd: python reconstruct.py
-    deps:
-    - reconstruct.py
-    outs:
-    - p_r/:
-        persist: true
-    params: 
-      - reconstruct
-      - geometry
+  # simulate:
+  #   cmd: python simulate.py data/LNet/ data/
+  #   deps:
+  #   - data/LNet/
+  #   - simulate.py
+  #   - simulator.py
+  #   outs:
+  #   params:
+  #     - geometry
+
+  # reconstruct:
+  #   cmd: python reconstruct.py
+  #   deps:
+  #   - reconstruct.py
+  #   outs:
+  #   - p_r/:
+  #       persist: true
+  #   params: 
+  #     - reconstruct
+  #     - geometry
 
   # add_noise:
   #   cmd: python add_noise.py
