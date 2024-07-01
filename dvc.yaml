@@ -1,6 +1,6 @@
 stages:
   generate_data:
-    cmd: python generate_data.py data/
+    cmd: python generate_data.py data_/
     deps:
     - generate_data.py
     params:
@@ -8,14 +8,14 @@ stages:
     - geometry
     - simulate
     outs:
-      - data/LNet/:
-          persist: true
-      - data/p0/:
-          persist: true
-      - data/sensors/:
-          persist: true
-      - data/p_data/:
-          persist: true
+      - data_/LNet/
+          # persist: true
+      - data_/p0/
+          # persist: true
+      - data_/sensors/
+          # persist: true
+      - data_/p_data/
+          # persist: true
     # always_changed: true
 
   # simulate:
@@ -28,16 +28,16 @@ stages:
   #   params:
   #     - geometry
 
-  # reconstruct:
-  #   cmd: python reconstruct.py
-  #   deps:
-  #   - reconstruct.py
-  #   outs:
-  #   - p_r/:
-  #       persist: true
-  #   params: 
-  #     - reconstruct
-  #     - geometry
+  reconstruct:
+    cmd: python time_reversal.py data_/
+    deps:
+    - time_reversal.py
+    outs:
+    - data_/p_r/
+        # persist: true
+    params: 
+      - geometry
+      - simulate
 
   # add_noise:
   #   cmd: python add_noise.py

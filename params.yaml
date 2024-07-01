@@ -1,10 +1,10 @@
 
 generate_data:
-  batch_size: 3
+  batch_size: 1
 
 geometry:
   N: [256, 256, 128]
-  pml_margin: 10
+  pml_margin: 20
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
   c: 1500
   cfl: 0.3
@@ -14,5 +14,6 @@ simulate:
   sensor_margin: 10 # added to the pml_margin
 
 
-# reconstruct:
+reconstruct:
+  noise_amplitude: amplitude
 

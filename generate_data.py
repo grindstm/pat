@@ -1,8 +1,8 @@
 import os
 import sys
 import signal
-
 import yaml
+
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
 
@@ -68,6 +68,7 @@ def add_margin(image, N, margin):
     ].add(image)
     return image_out
 
+
 def sensor_plane(num_sensors, pml_margin, N, sensor_margin):
     """
     Generate sensor positions in a plane
@@ -98,6 +99,7 @@ def sensor_plane(num_sensors, pml_margin, N, sensor_margin):
     x, y = jnp.meshgrid(x, y)
     sensor_positions = (x.ravel(), y.ravel(), z)
     return BLISensors(positions=sensor_positions, n=N), sensor_positions
+
 
 if __name__ == "__main__":
     # Signal handling
@@ -139,7 +141,11 @@ if __name__ == "__main__":
     # Save vessels
     folder_index = (
         max(
-            [int(filename.split("_")[0]) for filename in os.listdir(f"{OUT_PATH}LNet/") if filename.split("_")[0].isdigit()],
+            [
+                int(filename.split("_")[0])
+                for filename in os.listdir(f"{OUT_PATH}LNet/")
+                if filename.split("_")[0].isdigit()
+            ],
             default=-1,
         )
         + 1
@@ -159,16 +165,19 @@ if __name__ == "__main__":
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
     # Set up the sensors
-    sensors_obj, sensor_positions = sensor_plane(NUM_SENSORS, PML_MARGIN, N, SENSOR_MARGIN)
+    sensors_obj, sensor_positions = sensor_plane(
+        NUM_SENSORS, PML_MARGIN, N, SENSOR_MARGIN
+    )
 
     @jit
     def compiled_simulator(p0):
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
-    
+
     for file in os.listdir(f"{OUT_PATH}LNet/"):
         if exit_flag:
             break
         
+        print(f"Processing {file}")
         # The LNet files which don't have a corresponding p0 file
         if os.path.exists(OUT_PATH + f"p0/{file.split('_')[0]}"):
             continue
@@ -186,17 +195,21 @@ if __name__ == "__main__":
 
         p_data = compiled_simulator(p0)
 
-        # p_data_3d = p_data.reshape(
-        #     int(time_axis.Nt),
-        #     int(jnp.sqrt(NUM_SENSORS)),
-        #     int(jnp.sqrt(NUM_SENSORS))
-        # )
-        # p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
 
-        # Save p0, p_data and sensor positions
-        
         p_data_file = f"{OUT_PATH}p_data/{file_index}.npy"
         jnp.save(p_data_file, p_data)
         sensors_file = f"{OUT_PATH}sensors/{file_index}.npy"
         jnp.save(sensors_file, sensor_positions)
         print(f"Saved {p0_file}, {p_data_file} and {sensors_file}")
+
+
+
+# Reshape p_data to 3D
+# p_data_3d = p_data.reshape(
+#     int(time_axis.Nt),
+#     int(jnp.sqrt(NUM_SENSORS)),
+#     int(jnp.sqrt(NUM_SENSORS))
+# )
+# p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
+
+# Save p0, p_data and sensor positions
