@@ -1,5 +1,7 @@
 import os
 import sys
+import signal
+
 import yaml
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
@@ -98,6 +100,15 @@ def sensor_plane(num_sensors, pml_margin, N, sensor_margin):
     return BLISensors(positions=sensor_positions, n=N), sensor_positions
 
 if __name__ == "__main__":
+    # Signal handling
+    def signal_handler(signum, frame):
+        global exit_flag
+        exit_flag = True
+        print("Exit signal received, finishing current task...")
+
+    exit_flag = False
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Parse parameters
     params = yaml.safe_load(open("params.yaml"))
     N = tuple(params["geometry"]["N"])
@@ -155,6 +166,9 @@ if __name__ == "__main__":
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
     
     for file in os.listdir(f"{OUT_PATH}LNet/"):
+        if exit_flag:
+            break
+        
         # The LNet files which don't have a corresponding p0 file
         if os.path.exists(OUT_PATH + f"p0/{file.split('_')[0]}"):
             continue

@@ -28,6 +28,8 @@ if __name__ == "__main__":
     NUM_SENSORS = params["simulate"]["num_sensors"]
     SENSOR_MARGIN = params["simulate"]["sensor_margin"]
 
+    if len(sys.argv) == 2:
+        file_index = sys.argv[1]
     if len(sys.argv) == 3:
         IN_PATH = sys.argv[1]
         OUT_PATH = sys.argv[2]
@@ -44,7 +46,6 @@ if __name__ == "__main__":
     medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=PML_MARGIN)
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
-    # Set up the sensors
     def simulator(p0):
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
 
@@ -61,13 +62,11 @@ if __name__ == "__main__":
 
         return -p_grad
 
-    for file in os.listdir(f"{IN_PATH}p0/"):
-        print(f"Processing {file}")
-        # p0 files which don't have a corresponding p_r file
-        if os.path.exists(OUT_PATH + f"p_r/{file.split('.')[0]}"):
-            continue
-        file_index = file.split(".")[0]
 
+    def reconstruct(file):
+        file_index = file.split(".")[0]
+        
+        # Set up the sensors
         sensor_positions = jnp.load(f"{OUT_PATH}sensors/{file}")
         sensors_obj = BLISensors(positions=sensor_positions, n=N)
 
@@ -91,5 +90,14 @@ if __name__ == "__main__":
         jnp.save(p_r_file, p_r.on_grid)
         print(f"Saved {p_r_file}")
 
-
-        # ----------------------------
+    if file_index is not None:
+        file = f"{file_index}.npy"
+        reconstruct(file_index)
+    else:
+        for file in os.listdir(f"{IN_PATH}p0/"):
+            print(f"Processing {file}")
+            # p0 files which don't have a corresponding p_r file
+            if os.path.exists(OUT_PATH + f"p_r/{file.split('.')[0]}"):
+                continue
+            
+            reconstruct(file)
