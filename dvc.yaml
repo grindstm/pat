@@ -29,9 +29,9 @@ stages:
   #     - geometry
 
   reconstruct:
-    cmd: python time_reversal.py data_/
+    cmd: python reconstruct.py data_/
     deps:
-    - time_reversal.py
+    - reconstruct.py
     outs:
     - data_/p_r/
         # persist: true
