@@ -38,25 +38,27 @@ if __name__ == "__main__":
     p_r_file = f"{data_path}p_r/{IN_NUM}.npy"
     if os.path.exists(p_r_file):
         p_r = jnp.load(p_r_file)
-        p_r_vol = Volume(p_r[...,0]).mode(1)
+        p_r_vol = Volume(p_r[...,0]).mode(1)#.isosurface(.2).alpha(0.2)#jnp.max(p_r)*.6)#
+        # # threshold 
+        p_r_vol.threshold(below=0.15, replace=0)
 
-        # threshold 
-        # p_r_vol.threshold(below=0.0005, replace=0)
-
-        # color
-        vrange = p_r_vol.scalar_range()
-        colors = [
-        (vrange[0], [0.0,0.0,1.0]),
-        (0,       [1.0,1.0,1.0]),
-        (vrange[1], [1.0,0.0,0.0])
-        ]
-        alpha = [1.0, 0.0, 1.]
-        # alpha = [1.0,.9,.9,.9, 0.0,.9,.9,.9, 1.]
-        p_r_vol.cmap(colors, alpha=alpha)
+        # # color
+        # vrange = p_r_vol.scalar_range()
+        # colors = [
+        # (vrange[0], [0.0,0.0,1.0]),
+        # (0,       [1.0,1.0,1.0]),
+        # (vrange[1], [1.0,0.0,0.0])
+        # ]
+        # # alpha = [1.0,.9,.9,.9, 0.0,.9,.9,.9, 1.]
+        # p_r_vol.cmap(colors, alpha=alpha)
+        alpha = [0.0, 1.]
+        # alpha = [1.0, 0.0, 1.]
+        p_r_vol.cmap("jet", alpha=alpha)
         p_r_vol.add_scalarbar(title="p_r", c="k") 
 
         show_items.append(p_r_vol)
-        print(f"Loaded {p_r_file}")
+        # print(f"Loaded {p_r_file}")
+        
     else:
         print(f"File {p_r_file} does not exist")
 
