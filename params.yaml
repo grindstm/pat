@@ -3,17 +3,18 @@ generate_data:
   batch_size: 1
 
 geometry:
-  N: [256, 256, 128]
-  pml_margin: 20
+  N: [128, 128, 128]
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
   c: 1500
   cfl: 0.3
+  pml_margin: 20 # each side
+  tissue_margin: [5, 5, 5] # Added to pml_margin on each side
+  sensor_margin: [5, 5, 5] # Added to pml_margin on each side; sensor_margin[2] < tissue_margin[2] 
+  num_sensors: 81
 
-simulate:
-  num_sensors: 64
-  sensor_margin: 10 # added to the pml_margin
+# simulate:
 
 
 reconstruct:
-  noise_amplitude: amplitude
+  noise_amplitude: 0.05
 

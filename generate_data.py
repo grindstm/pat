@@ -13,38 +13,12 @@ from jwave import FourierSeries
 from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
 
+import util
 
-def generate_vessels(batch_size, N, pml_margin):
+
+def add_margin(image, N, margin, shift=(0, 0, 0)):
     """
-    Generate a batch of Lindenmayer vessels
-
-    Parameters
-    ----------
-    batch_size : int
-        Number of vessels to generate
-    N : tuple
-        Size of the domain
-    pml_margin : int
-        Size of the PML
-
-    Returns
-    -------
-    list, list : images, n_iters
-
-    """
-    sim = VSystemGenerator(
-        n=batch_size,
-        # d0_mean=2.0,
-        # d0_std=.50,
-        tissue_volume=[n - 2 * pml_margin for n in N],
-    )
-
-    return sim.create_networks()
-
-
-def add_margin(image, N, margin):
-    """
-    Place the generated image in the center of the domain
+    Place the image in the center of the domain, with margin and shift
 
     Parameters
     ----------
@@ -52,54 +26,53 @@ def add_margin(image, N, margin):
         The generated image
     N : tuple
         Size of the domain (3D)
-    margin : int
-        Size of the margin on each side
+    margin : ndarray
+        Margin for each side of corresponding dimension. In other words, half the total margin in each dimension
+    shift : ndarray
+        Shift in each dimension
 
     Returns
     -------
     ndarray
         The image with the margin added
     """
+    assert [N[i] + 2 * margin[i] + shift[i] == image.shape[i] for i in range(3)]
+
     image_out = jnp.zeros(N)
     image_out = image_out.at[
-        margin:-margin,
-        margin:-margin,
-        margin:-margin,
-    ].add(image)
+        margin[0] + shift[0] : N[0] - margin[0] + shift[0],
+        margin[1] + shift[1] : N[1] - margin[1] + shift[1],
+        margin[2] + shift[2] : N[2] - margin[2] + shift[2],
+    ].set(image)
+
     return image_out
 
 
-def sensor_plane(num_sensors, pml_margin, N, sensor_margin):
+def point_plane(num_points, N, margin):
     """
-    Generate sensor positions in a plane
+    Generate points in the (x, y) plane at the z position with margins
 
     Parameters
     ----------
-    num_sensors : int
-        Number of sensors
-    pml_margin : int
-        Size of the PML
+    num_points : int
+        Number of points (use a number with an integer square root)
+    margin : ndarray
+        Size of the margin in each dimension.
     N : tuple
-        Size of the domain
-    sensor_margin : int
-        Additional margin within the PML
+        Size of the domain (x, y, z)
 
     Returns
     -------
-    BLISensors
-        The sensor object
     tuple
-        The sensor positions
+        The positions
     """
-    sensor_margin = pml_margin + sensor_margin
-    num_sensors_sqrt = jnp.sqrt(num_sensors).astype(int)
-    x = jnp.linspace(sensor_margin, N[0] - sensor_margin, num_sensors_sqrt)
-    y = jnp.linspace(sensor_margin, N[1] - sensor_margin, num_sensors_sqrt)
-    z = jnp.ones(num_sensors) * (N[2] - pml_margin)
+    num_points_sqrt = jnp.sqrt(num_points).astype(int)
+    x = jnp.linspace(margin[0], N[0] - margin[0], num_points_sqrt)
+    y = jnp.linspace(margin[1], N[1] - margin[1], num_points_sqrt)
+    z = jnp.ones(num_points) * (N[2] - margin[2])
     x, y = jnp.meshgrid(x, y)
-    sensor_positions = (x.ravel(), y.ravel(), z)
-    return BLISensors(positions=sensor_positions, n=N), sensor_positions
-
+    positions = (x.ravel(), y.ravel(), z)
+    return positions
 
 if __name__ == "__main__":
     # Signal handling
@@ -113,14 +86,15 @@ if __name__ == "__main__":
 
     # Parse parameters
     params = yaml.safe_load(open("params.yaml"))
+    BATCH_SIZE = params["generate_data"]["batch_size"]
     N = tuple(params["geometry"]["N"])
-    PML_MARGIN = params["geometry"]["pml_margin"]
     DX = tuple(params["geometry"]["dx"])
     C = params["geometry"]["c"]
     CFL = params["geometry"]["cfl"]
-    NUM_SENSORS = params["simulate"]["num_sensors"]
-    SENSOR_MARGIN = params["simulate"]["sensor_margin"]
-    BATCH_SIZE = params["generate_data"]["batch_size"]
+    PML_MARGIN = params["geometry"]["pml_margin"]
+    TISSUE_MARGIN = params["geometry"]["tissue_margin"]
+    SENSOR_MARGIN = params["geometry"]["sensor_margin"]
+    NUM_SENSORS = params["geometry"]["num_sensors"]
 
     # Parse arguments
     if len(sys.argv) == 2:
@@ -136,7 +110,11 @@ if __name__ == "__main__":
     os.makedirs(f"{OUT_PATH}p_data/", exist_ok=True)
 
     # Generate vessels
-    vessels_batch, n_iters = generate_vessels(BATCH_SIZE, N, PML_MARGIN)
+    tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN]*3))
+    tissue_volume = np.array(N) - tissue_margin 
+    print(f"Tissue volume: {tissue_volume}")
+    sim = VSystemGenerator(tissue_volume=tissue_volume)
+    vessels_batch, n_iters = sim.create_networks(BATCH_SIZE)
 
     # Save vessels
     folder_index = (
@@ -165,10 +143,11 @@ if __name__ == "__main__":
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
     # Set up the sensors
-    sensors_obj, sensor_positions = sensor_plane(
-        NUM_SENSORS, PML_MARGIN, N, SENSOR_MARGIN
-    )
+    margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN]*3)
+    sensor_positions = point_plane(NUM_SENSORS, N, margin)
+    sensors_obj = BLISensors(sensor_positions, N)
 
+    @util.timer
     @jit
     def compiled_simulator(p0):
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
@@ -186,7 +165,7 @@ if __name__ == "__main__":
         print(f"Generating data for {file}")
 
         # Add space for perfectly matched layer (PML) to the vessels
-        p0 = add_margin(vessels, N, PML_MARGIN)
+        p0 = add_margin(vessels, N, tissue_margin//2, shift=(0, 0, -5))
         p0_file = f"{OUT_PATH}p0/{file_index}.npy"
         jnp.save(p0_file, p0)
 
@@ -204,12 +183,3 @@ if __name__ == "__main__":
 
 
 
-# Reshape p_data to 3D
-# p_data_3d = p_data.reshape(
-#     int(time_axis.Nt),
-#     int(jnp.sqrt(NUM_SENSORS)),
-#     int(jnp.sqrt(NUM_SENSORS))
-# )
-# p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
-
-# Save p0, p_data and sensor positions
