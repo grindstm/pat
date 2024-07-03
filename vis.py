@@ -60,5 +60,14 @@ if __name__ == "__main__":
     else:
         print(f"File {p_r_file} does not exist")
 
+    # Load sensors        
+    sensors_file = f"{data_path}sensors/{IN_NUM}.npy"
+    if os.path.exists(sensors_file):
+        sensors = jnp.load(sensors_file)
+        sensor_points = vedo.Points(sensors.T)
+        show_items.append(sensor_points)
+        print(f"Loaded {sensors_file}")
+    else:
+        print(f"File {sensors_file} does not exist")
 
     plotter.show(*show_items)

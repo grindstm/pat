@@ -67,3 +67,12 @@ def loop(func):
 
         func(file)
 
+# Reshape p_data to 3D
+# p_data_3d = p_data.reshape(
+#     int(time_axis.Nt),
+#     int(jnp.sqrt(NUM_SENSORS)),
+#     int(jnp.sqrt(NUM_SENSORS))
+# )
+# p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
+
+# Save p0, p_data and sensor positions
