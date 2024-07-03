@@ -20,19 +20,6 @@ import functools
 
 import util
 
-# def timer(func):
-#     """A decorator that prints the execution time of the function it decorates."""
-#     @functools.wraps(func)
-#     def wrapper_timer(*args, **kwargs):
-#         start_time = time.perf_counter()    # 1. Start the timer
-#         value = func(*args, **kwargs)
-#         end_time = time.perf_counter()      # 2. End the timer
-#         run_time = end_time - start_time    # 3. Calculate the running time
-#         print(f"Finished {func.__name__!r} in {run_time:.4f} secs")
-#         return value
-#     return wrapper_timer
-
-
 
 def add_gaussian_noise(data, noise_std_dev, key):
     noise = jax.random.normal(key, shape=data.shape, dtype=data.dtype) * noise_std_dev

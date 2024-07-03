@@ -6,7 +6,7 @@ stages:
     params:
     - generate_data
     - geometry
-    - simulate
+    # - simulate
     outs:
       - data_/LNet/
           # persist: true
@@ -18,26 +18,36 @@ stages:
           # persist: true
     # always_changed: true
 
-  # simulate:
-  #   cmd: python simulate.py data/LNet/ data/
-  #   deps:
-  #   - data/LNet/
-  #   - simulate.py
-  #   - simulator.py
-  #   outs:
-  #   params:
-  #     - geometry
-
   reconstruct:
     cmd: python reconstruct.py data_/
     deps:
     - reconstruct.py
+    - data_/p_data/
+    - data_/sensors/
+    - data_/p0/
     outs:
     - data_/p_r/
         # persist: true
     params: 
       - geometry
-      - simulate
+      # - simulate
+
+  visualize:
+    cmd: python vis.py data_/
+    deps:
+    - vis.py
+    - data_/p0/
+    # - data_/p_r/
+    # - data_/p_data/
+    # - data_/sensors/
+    # params:
+    # - geometry
+    # - reconstruct
+    # - simulate
+    # outs:
+    # - data_/visualizations/
+        # persist: true
+
 
   # add_noise:
   #   cmd: python add_noise.py

@@ -20,23 +20,6 @@ import functools
 
 import util
 
-# def timer(func):
-#     """A decorator that prints the execution time of the function it decorates."""
-#     @functools.wraps(func)
-#     def wrapper_timer(*args, **kwargs):
-#         start_time = time.perf_counter()    # 1. Start the timer
-#         value = func(*args, **kwargs)
-#         end_time = time.perf_counter()      # 2. End the timer
-#         run_time = end_time - start_time    # 3. Calculate the running time
-#         print(f"Finished {func.__name__!r} in {run_time:.4f} secs")
-#         return value
-#     return wrapper_timer
-
-
-
-def add_gaussian_noise(data, noise_std_dev, key):
-    noise = jax.random.normal(key, shape=data.shape, dtype=data.dtype) * noise_std_dev
-    return data + noise
 
 def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
     """
@@ -75,12 +58,13 @@ if __name__ == "__main__":
     # Parse parameters
     params = yaml.safe_load(open("params.yaml"))
     N = tuple(params["geometry"]["N"])
-    PML_MARGIN = params["geometry"]["pml_margin"]
     DX = tuple(params["geometry"]["dx"])
     C = params["geometry"]["c"]
     CFL = params["geometry"]["cfl"]
-    NUM_SENSORS = params["simulate"]["num_sensors"]
-    SENSOR_MARGIN = params["simulate"]["sensor_margin"]
+    PML_MARGIN = params["geometry"]["pml_margin"]
+    TISSUE_MARGIN = params["geometry"]["tissue_margin"]
+    SENSOR_MARGIN = params["geometry"]["sensor_margin"]
+    NUM_SENSORS = params["geometry"]["num_sensors"]
 
     # Parse arguments
     if len(sys.argv) == 2:
@@ -106,63 +90,20 @@ if __name__ == "__main__":
     def simulator(p0, sensors_obj):
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
 
-    # @jit
-    # def lazy_time_reversal(p0, p_data,sensors_obj):
-    #     def mse_loss(p0, p_data):
-    #         p0 = p0.replace_params(p0.params)
-    #         p_pred = simulator(p0,sensors_obj=sensors_obj)[..., 0]
-    #         return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2)
 
-    #     p0 = FourierSeries.empty(domain)
-
-    #     p_grad = grad(mse_loss)(p0, p_data)
-
-    #     return -p_grad
+    def mse_loss(p0, p_data, sensors_obj):
+        p0 = p0.replace_params(p0.params)
+        p_pred = simulator(p0,sensors_obj=sensors_obj)[..., 0]
+        return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2)
 
     @jit
-    def lazy_time_reversal(p0, p_data,sensors_obj):
-        def mse_loss(p0_params, p_data):
-            p0 = p0.replace_params(p0_params)
-            p_pred = simulator(p0, sensors_obj=sensors_obj)[..., 0]
-            regularization_strength = 0.01  # This is a hyperparameter you can tune
-            l2_norm = regularization_strength * jnp.sum(p0_params**2)
-            return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2) + l2_norm
+    def lazy_time_reversal(p0, p_data, sensors_obj):
 
         p0 = FourierSeries.empty(domain)
 
-        p_grad = grad(mse_loss)(p0, p_data)
+        p_grad = grad(mse_loss)(p0, p_data, sensors_obj)
 
         return -p_grad
-    
-
-    # @jit
-    # def iterative_time_reversal(p0, p_data, sensors_obj, num_iters=2, learning_rate=0.5):
-    #     def mse_loss(p0_params):
-    #         # Reconstruct p0 from parameters
-    #         p0_reconstructed = FourierSeries(p0_params, domain)
-    #         # Run simulation with current p0 estimate
-    #         p_pred = simulator(p0_reconstructed, sensors_obj=sensors_obj)[..., 0]
-    #         # Calculate mean squared error
-    #         return 0.5 * jnp.sum(jnp.square(p_pred - p_data[..., 0]))
-
-    #     # Initialize parameters (could also be passed as an argument)
-    #     p0_params = p0.params
-        
-    #     # Define the gradient function
-    #     grad_loss = grad(mse_loss)
-
-    #     # Iterative update
-    #     for _ in range(num_iters):
-    #         # Compute gradients
-    #         gradients = grad_loss(p0_params)
-            
-    #         # Update parameters using gradient descent
-    #         p0_params -= learning_rate * gradients
-
-    #     # Return the final reconstructed parameters
-    #     return FourierSeries(p0_params, domain)
-
-    # Example usage within the larger setup context
 
     
     @util.timer
@@ -174,6 +115,7 @@ if __name__ == "__main__":
         sensors_obj = BLISensors(positions=sensor_positions, n=N)
 
         p0_file = f"{IN_PATH}p0/{file_index}.npy"
+        print(p0_file)
         p0 = jnp.load(p0_file)
         p_data_file = f"{IN_PATH}p_data/{file_index}.npy"
         p_data = jnp.load(p_data_file)
@@ -182,13 +124,6 @@ if __name__ == "__main__":
         k0, k1 = jax.random.PRNGKey(int(time.time()))
         p_data_noisy = add_colored_noise(k1, p_data)
     
-        # noise_std_dev = 0.05  # Standard deviation of the Gaussian noise
-        # key, subkey = jax.random.split(key)  # Split the key for reuse
-        # p_data_noisy = add_gaussian_noise(p_data, noise_std_dev, subkey)
-
-        # visualize p0_noisy
-        # show_field(p_data_noisy, "Section of the initial pressure")
-
         p_r = lazy_time_reversal(p0, p_data_noisy, sensors_obj)
 
         p_r_file = f"{OUT_PATH}p_r/{file_index}.npy"
