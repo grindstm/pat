@@ -22,6 +22,7 @@ stages:
     cmd: python reconstruct.py data_/
     deps:
     - reconstruct.py
+    - time_reversal.py
     - data_/p_data/
     - data_/sensors/
     - data_/p0/
