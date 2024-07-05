@@ -5,6 +5,8 @@ import yaml
 
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
+import scipy.ndimage
+from perlin_numpy import generate_perlin_noise_3d
 
 import jax.numpy as jnp
 from jax import jit
@@ -14,6 +16,7 @@ from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
 
 import util
+
 
 
 def add_margin(image, N, margin, shift=(0, 0, 0)):
@@ -111,12 +114,15 @@ if __name__ == "__main__":
 
     # Generate vessels
     tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN]*3))
-    tissue_volume = np.array(N) - tissue_margin 
+    shrink_factor = 2
+    tissue_volume = shrink_factor * (np.array(N) - tissue_margin) # VSystemGenerator requires a minimum volume size to function properly
     print(f"Tissue volume: {tissue_volume}")
-    sim = VSystemGenerator(tissue_volume=tissue_volume)
+    sim = VSystemGenerator(tissue_volume=tissue_volume, )
     vessels_batch, n_iters = sim.create_networks(BATCH_SIZE)
+        # shrink the vessels
+    vessels_batch = [scipy.ndimage.zoom(vessels_batch[i], 1/shrink_factor) for i in range(len(vessels_batch))]
 
-    # Save vessels
+        # Save vessels
     folder_index = (
         max(
             [
