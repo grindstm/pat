@@ -2,6 +2,7 @@ import os
 import sys
 import signal
 import yaml
+import argparse
 
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
@@ -14,10 +15,7 @@ from jax import jit
 from jwave import FourierSeries
 from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
-
 import util
-
-
 
 def add_margin(image, N, margin, shift=(0, 0, 0)):
     """
@@ -77,6 +75,7 @@ def point_plane(num_points, N, margin):
     positions = (x.ravel(), y.ravel(), z)
     return positions
 
+
 if __name__ == "__main__":
     # Signal handling
     def signal_handler(signum, frame):
@@ -88,22 +87,17 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     # Parse parameters
-    params = yaml.safe_load(open("params.yaml"))
-    BATCH_SIZE = params["generate_data"]["batch_size"]
-    N = tuple(params["geometry"]["N"])
-    DX = tuple(params["geometry"]["dx"])
-    C = params["geometry"]["c"]
-    CFL = params["geometry"]["cfl"]
-    PML_MARGIN = params["geometry"]["pml_margin"]
-    TISSUE_MARGIN = params["geometry"]["tissue_margin"]
-    SENSOR_MARGIN = params["geometry"]["sensor_margin"]
-    NUM_SENSORS = params["geometry"]["num_sensors"]
+    BATCH_SIZE, N, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE = util.parse_params()
 
+    parser = argparse.ArgumentParser() 
+    parser.add_argument("-o", type=str, default="data//", help="Output path")
+    args = parser.parse_args()
+    OUT_PATH = args.o
     # Parse arguments
-    if len(sys.argv) == 2:
-        OUT_PATH = sys.argv[1]
-    else:
-        OUT_PATH = "data/"
+    # if len(sys.argv) == 2:
+    #     OUT_PATH = sys.argv[1]
+    # else:
+    #     OUT_PATH = "data/"
 
     # Output directories
     os.makedirs(OUT_PATH, exist_ok=True)
@@ -111,18 +105,22 @@ if __name__ == "__main__":
     os.makedirs(f"{OUT_PATH}p0/", exist_ok=True)
     os.makedirs(f"{OUT_PATH}sensors/", exist_ok=True)
     os.makedirs(f"{OUT_PATH}p_data/", exist_ok=True)
+    os.makedirs(f"{OUT_PATH}c/", exist_ok=True)
 
+    # ----------------------
     # Generate vessels
-    tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN]*3))
-    shrink_factor = 2
-    tissue_volume = shrink_factor * (np.array(N) - tissue_margin) # VSystemGenerator requires a minimum volume size to function properly
+    tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN] * 3))
+    tissue_volume = np.array(N) - tissue_margin
     print(f"Tissue volume: {tissue_volume}")
-    sim = VSystemGenerator(tissue_volume=tissue_volume, )
+    shrink_factor = 2  # VSystemGenerator requires a minimum volume size to function properly
+    sim = VSystemGenerator(tissue_volume=tissue_volume * shrink_factor)
     vessels_batch, n_iters = sim.create_networks(BATCH_SIZE)
-        # shrink the vessels
-    vessels_batch = [scipy.ndimage.zoom(vessels_batch[i], 1/shrink_factor) for i in range(len(vessels_batch))]
-
-        # Save vessels
+    # shrink the vessels
+    vessels_batch = [
+        scipy.ndimage.zoom(vessels_batch[i], 1 / shrink_factor)
+        for i in range(len(vessels_batch))
+    ]
+    # Save vessels
     folder_index = (
         max(
             [
@@ -142,50 +140,61 @@ if __name__ == "__main__":
         np.save(f"{OUT_PATH}LNet/{filename}", vessels)
         print(f"Created vessels image {filename}")
 
+    # ----------------------
     # Set up the simulator
     domain = Domain(N, DX)
     sound_speed = jnp.ones(N) * C
     medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=PML_MARGIN)
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
+    # ----------------------
     # Set up the sensors
-    margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN]*3)
+    margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN] * 3)
     sensor_positions = point_plane(NUM_SENSORS, N, margin)
     sensors_obj = BLISensors(sensor_positions, N)
 
     @util.timer
     @jit
-    def compiled_simulator(p0):
+    def compiled_simulator(p0, sound_speed):
+        medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=PML_MARGIN)
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
 
     for file in os.listdir(f"{OUT_PATH}LNet/"):
         if exit_flag:
             break
-        
-        print(f"Processing {file}")
+
+        print(f"Generating data for {file}")
         # The LNet files which don't have a corresponding p0 file
         if os.path.exists(OUT_PATH + f"p0/{file.split('_')[0]}"):
             continue
         file_index = file.split("_")[0]
         vessels = jnp.load(f"{OUT_PATH}LNet/{file}")
-        print(f"Generating data for {file}")
 
-        # Add space for perfectly matched layer (PML) to the vessels
-        p0 = add_margin(vessels, N, tissue_margin//2, shift=(0, 0, -5))
+        # Generate Sound Speed
+        if SOUND_SPEED_VARIATION_AMPLITUDE == 0:
+            sound_speed = C * jnp.ones(N)
+        else:
+            sound_speed_volume = np.array(N)-np.array(PML_MARGIN)
+            noise = generate_perlin_noise_3d(
+                sound_speed_volume, [SOUND_SPEED_PERIODICITY] * 3, tileable=(False, False, False)
+            )
+            sound_speed = C + SOUND_SPEED_VARIATION_AMPLITUDE * noise
+            sound_speed = add_margin(sound_speed, N, np.array(3*[PML_MARGIN // 2]), shift=(0, 0, -SENSOR_MARGIN[2]))
+        c_file = f"{OUT_PATH}c/{file_index}.npy"
+        jnp.save(c_file, sound_speed)
+
+        # Add margin to the vessels
+        p0 = add_margin(vessels, N, tissue_margin // 2, shift=(0, 0, -SENSOR_MARGIN[2]))
         p0_file = f"{OUT_PATH}p0/{file_index}.npy"
         jnp.save(p0_file, p0)
 
         p0 = jnp.expand_dims(p0, -1)
         p0 = FourierSeries(p0, domain)
 
-        p_data = compiled_simulator(p0)
-
+        p_data = compiled_simulator(p0, sound_speed)
 
         p_data_file = f"{OUT_PATH}p_data/{file_index}.npy"
         jnp.save(p_data_file, p_data)
         sensors_file = f"{OUT_PATH}sensors/{file_index}.npy"
         jnp.save(sensors_file, sensor_positions)
-        print(f"Saved {p0_file}, {p_data_file} and {sensors_file}")
-
-
-
+        print(f"Saved {p0_file}, {p_data_file}, {sensors_file}, {c_file}")
