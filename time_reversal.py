@@ -19,15 +19,8 @@ import util
 
 
 # Parse parameters
-params = yaml.safe_load(open("params.yaml"))
-N = tuple(params["geometry"]["N"])
-DX = tuple(params["geometry"]["dx"])
-C = params["geometry"]["c"]
-CFL = params["geometry"]["cfl"]
-PML_MARGIN = params["geometry"]["pml_margin"]
-TISSUE_MARGIN = params["geometry"]["tissue_margin"]
-SENSOR_MARGIN = params["geometry"]["sensor_margin"]
-NUM_SENSORS = params["geometry"]["num_sensors"]
+BATCH_SIZE, N, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE = util.parse_params()
+
 # Set up the simulator
 domain = Domain(N, DX)
 sound_speed = jnp.ones(N) * C
@@ -92,12 +85,15 @@ def lazy_time_reversal(p0, p_data, sensor_positions):
 
 #     return p0, mses
 
+
 @partial(jit, static_argnums=(3, 4))
-def iterative_time_reversal(p0, p_data, sensor_positions, num_iterations=10, learning_rate=0.1):
+def iterative_time_reversal(
+    p0, p_data, sensor_positions, num_iterations=10, learning_rate=0.1
+):
     sensors_obj = BLISensors(positions=sensor_positions, n=N)
 
     # Apply a mask to ignore certain regions during optimization
-    mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2]:].set(0)
+    mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2] :].set(0)
     mask = FourierSeries(mask, domain)
 
     def mse_loss(p0, p_data):
@@ -117,7 +113,6 @@ def iterative_time_reversal(p0, p_data, sensor_positions, num_iterations=10, lea
     _, (all_p0s, mses) = scan(update, p0, None, length=num_iterations)
 
     return all_p0s, mses
-
 
 
 @partial(jit, static_argnums=(3))
