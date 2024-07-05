@@ -1,6 +1,7 @@
 import sys
 import os
 import signal
+import yaml
 
 import jax
 import jax.numpy as jnp
@@ -45,6 +46,7 @@ def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
 
 
 if __name__ == "__main__":
+    NUM_ITERATIONS, LEARNING_RATE, NOISE_AMPLITUDE = yaml.safe_load(open("params.yaml"))["reconstruct"].values() 
     # Signal handling
     def signal_handler(signum, frame):
         global exit_flag
@@ -87,13 +89,11 @@ if __name__ == "__main__":
 
         # Add noise to p_data
         k0, k1 = jax.random.PRNGKey(int(time.time()))
-        p_data_noisy = add_colored_noise(k1, p_data)
+        p_data_noisy = add_colored_noise(k1, p_data, amplitude=NOISE_AMPLITUDE)
 
         # p_r = time_reversal.lazy_time_reversal(p0, p_data_noisy, sensor_positions)
 
-        num_iterations=4
-        learning_rate=50.
-        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=num_iterations, learning_rate=learning_rate) 
+        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=NUM_ITERATIONS, learning_rate=LEARNING_RATE) 
         print(f"Mean squared errors: {mses}")
         
         # p_r, losses = time_reversal.iterative_time_reversal_optimized(p0, p_data_noisy, sensor_positions, num_iterations=4)
