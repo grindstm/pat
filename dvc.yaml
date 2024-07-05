@@ -16,6 +16,8 @@ stages:
           # persist: true
       - data_/p_data/
           # persist: true
+      - data_/c/
+          # persist: true
     # always_changed: true
 
   reconstruct:

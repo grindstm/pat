@@ -4,6 +4,10 @@ import time
 import functools
 import sys
 import yaml
+try:
+    import colored_traceback.auto
+except ImportError:
+    pass
 
 def timer(func):
     """A decorator that prints the execution time of the function it decorates."""
@@ -27,14 +31,20 @@ def signal_handler(signum, frame):
 # Parse parameters
 def parse_params():
     params = yaml.safe_load(open("params.yaml"))
+    BATCH_SIZE = params["generate_data"]["batch_size"]
     N = tuple(params["geometry"]["N"])
-    PML_MARGIN = params["geometry"]["pml_margin"]
     DX = tuple(params["geometry"]["dx"])
     C = params["geometry"]["c"]
     CFL = params["geometry"]["cfl"]
-    NUM_SENSORS = params["simulate"]["num_sensors"]
-    SENSOR_MARGIN = params["simulate"]["sensor_margin"]
-    return N, PML_MARGIN, DX, C, CFL, NUM_SENSORS, SENSOR_MARGIN
+    PML_MARGIN = params["geometry"]["pml_margin"]
+    TISSUE_MARGIN = params["geometry"]["tissue_margin"]
+    SENSOR_MARGIN = params["geometry"]["sensor_margin"]
+    NUM_SENSORS = params["geometry"]["num_sensors"]
+    SOUND_SPEED_PERIODICITY = params["geometry"]["sound_speed_periodicity"]
+    SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"][
+        "sound_speed_variation_amplitude"
+    ]
+    return BATCH_SIZE, N, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE
 
 # Parse arguments
 def parse_args():
@@ -66,6 +76,26 @@ def loop(func):
             continue
 
         func(file)
+if __name__ == "__main__":
+    params = yaml.safe_load(open("params.yaml"))
+    BATCH_SIZE = params["generate_data"]["batch_size"]
+    N = tuple(params["geometry"]["N"])
+    DX = tuple(params["geometry"]["dx"])
+    C = params["geometry"]["c"]
+    CFL = params["geometry"]["cfl"]
+    PML_MARGIN = params["geometry"]["pml_margin"]
+    TISSUE_MARGIN = params["geometry"]["tissue_margin"]
+    SENSOR_MARGIN = params["geometry"]["sensor_margin"]
+    NUM_SENSORS = params["geometry"]["num_sensors"]
+    SOUND_SPEED_PERIODICITY = params["geometry"]["sound_speed_periodicity"]
+    SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"][
+        "sound_speed_variation_amplitude"
+    ]
+
+
+
+
+
 
 # Reshape p_data to 3D
 # p_data_3d = p_data.reshape(
@@ -76,3 +106,8 @@ def loop(func):
 # p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
 
 # Save p0, p_data and sensor positions
+
+
+# def add_gaussian_noise(data, noise_std_dev, key):
+#     noise = jax.random.normal(key, shape=data.shape, dtype=data.dtype) * noise_std_dev
+#     return data + noise
