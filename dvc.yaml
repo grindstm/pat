@@ -32,9 +32,10 @@ stages:
     params: 
       - geometry
       # - simulate
+    # always_changed: true
 
   visualize:
-    cmd: python vis.py data_/
+    cmd: python vis.py
     deps:
     - vis.py
     - data_/p0/
@@ -48,6 +49,7 @@ stages:
     # outs:
     # - data_/visualizations/
         # persist: true
+
 
 
   # add_noise:
