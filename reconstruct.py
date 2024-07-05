@@ -91,17 +91,23 @@ if __name__ == "__main__":
 
         # p_r = time_reversal.lazy_time_reversal(p0, p_data_noisy, sensor_positions)
 
-        p_r, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=4, learning_rate=50.) 
+        num_iterations=4
+        learning_rate=50.
+        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=num_iterations, learning_rate=learning_rate) 
         print(f"Mean squared errors: {mses}")
         
         # p_r, losses = time_reversal.iterative_time_reversal_optimized(p0, p_data_noisy, sensor_positions, num_iterations=4)
         # print(f"Losses: {losses}")
 
+        # print(len(p_rs))
 
+        for i, p_r in enumerate(p_rs):
+            if exit_flag:
+                break
 
-        p_r_file = f"{OUT_PATH}p_r/{file_index}.npy"
-        jnp.save(p_r_file, p_r.on_grid)
-        print(f"Saved {p_r_file}")
+            p_r_file = f"{OUT_PATH}p_r/{file_index}_{i}.npy"
+            jnp.save(p_r_file, p_r.squeeze())
+            print(f"Saved {p_r_file}")
 
     for file in os.listdir(f"{IN_PATH}p0/"):
         if exit_flag:
