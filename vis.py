@@ -99,5 +99,5 @@ class VolumeVisualizer:
         self.plotter.show()
 
 if __name__ == "__main__":
-    visualizer = VolumeVisualizer("data/")
+    visualizer = VolumeVisualizer("data_/")
     visualizer.show()

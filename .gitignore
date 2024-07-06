@@ -1,0 +1,7 @@
+/p_r
+/p_r
+.npy
+*.pyc
+archive/
+data/
+data_/

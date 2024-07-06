@@ -17,6 +17,7 @@ from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
 import util
 
+
 def add_margin(image, N, margin, shift=(0, 0, 0)):
     """
     Place the image in the center of the domain, with margin and shift
@@ -87,17 +88,24 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     # Parse parameters
-    BATCH_SIZE, N, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE = util.parse_params()
+    (
+        BATCH_SIZE,
+        N,
+        DX,
+        C,
+        CFL,
+        PML_MARGIN,
+        TISSUE_MARGIN,
+        SENSOR_MARGIN,
+        NUM_SENSORS,
+        SOUND_SPEED_PERIODICITY,
+        SOUND_SPEED_VARIATION_AMPLITUDE,
+    ) = util.parse_params()
 
-    parser = argparse.ArgumentParser() 
-    parser.add_argument("-o", type=str, default="data//", help="Output path")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("out_path", type=str, default="data//", help="Output path")
     args = parser.parse_args()
-    OUT_PATH = args.o
-    # Parse arguments
-    # if len(sys.argv) == 2:
-    #     OUT_PATH = sys.argv[1]
-    # else:
-    #     OUT_PATH = "data/"
+    OUT_PATH = args.out_path
 
     # Output directories
     os.makedirs(OUT_PATH, exist_ok=True)
@@ -108,11 +116,14 @@ if __name__ == "__main__":
     os.makedirs(f"{OUT_PATH}c/", exist_ok=True)
 
     # ----------------------
+
     # Generate vessels
     tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN] * 3))
     tissue_volume = np.array(N) - tissue_margin
     print(f"Tissue volume: {tissue_volume}")
-    shrink_factor = 2  # VSystemGenerator requires a minimum volume size to function properly
+    shrink_factor = (
+        2  # VSystemGenerator requires a minimum volume size to function properly
+    )
     sim = VSystemGenerator(tissue_volume=tissue_volume * shrink_factor)
     vessels_batch, n_iters = sim.create_networks(BATCH_SIZE)
     # shrink the vessels
@@ -141,13 +152,13 @@ if __name__ == "__main__":
         print(f"Created vessels image {filename}")
 
     # ----------------------
+
     # Set up the simulator
     domain = Domain(N, DX)
     sound_speed = jnp.ones(N) * C
     medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=PML_MARGIN)
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
-    # ----------------------
     # Set up the sensors
     margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN] * 3)
     sensor_positions = point_plane(NUM_SENSORS, N, margin)
@@ -174,12 +185,19 @@ if __name__ == "__main__":
         if SOUND_SPEED_VARIATION_AMPLITUDE == 0:
             sound_speed = C * jnp.ones(N)
         else:
-            sound_speed_volume = np.array(N)-np.array(PML_MARGIN)
+            sound_speed_volume = np.array(N) - np.array(PML_MARGIN)
             noise = generate_perlin_noise_3d(
-                sound_speed_volume, [SOUND_SPEED_PERIODICITY] * 3, tileable=(False, False, False)
+                sound_speed_volume,
+                [SOUND_SPEED_PERIODICITY] * 3,
+                tileable=(False, False, False),
             )
             sound_speed = C + SOUND_SPEED_VARIATION_AMPLITUDE * noise
-            sound_speed = add_margin(sound_speed, N, np.array(3*[PML_MARGIN // 2]), shift=(0, 0, -SENSOR_MARGIN[2]))
+            sound_speed = add_margin(
+                sound_speed,
+                N,
+                np.array(3 * [PML_MARGIN // 2]),
+                shift=(0, 0, -SENSOR_MARGIN[2]),
+            )
         c_file = f"{OUT_PATH}c/{file_index}.npy"
         jnp.save(c_file, sound_speed)
 
