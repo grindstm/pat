@@ -10,10 +10,10 @@ import scipy.ndimage
 from perlin_numpy import generate_perlin_noise_3d
 
 import jax.numpy as jnp
-from jax import jit
+from jax import jit, vmap
 
 from jwave import FourierSeries
-from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
+from jwave.geometry import Domain, Medium, TimeAxis, BLISensors, get_line_transducer
 from jwave.acoustics import simulate_wave_propagation
 import util
 
@@ -27,7 +27,7 @@ def add_margin(image, N, margin, shift=(0, 0, 0)):
     image : ndarray
         The generated image
     N : tuple
-        Size of the domain (3D)
+        Size of the domain (2D or 3D)
     margin : ndarray
         Margin for each side of corresponding dimension. In other words, half the total margin in each dimension
     shift : ndarray
@@ -38,16 +38,23 @@ def add_margin(image, N, margin, shift=(0, 0, 0)):
     ndarray
         The image with the margin added
     """
-    assert [N[i] + 2 * margin[i] + shift[i] == image.shape[i] for i in range(3)]
+    # assert [N[i] + 2 * margin[i] + shift[i] == image.shape[i] for i in range(3)]
+    if len(N) == 2:
+        image_out = jnp.zeros(N)
+        image_out = image_out.at[
+            margin[0] + shift[0] : N[0] - margin[0] + shift[0],
+            margin[1] + shift[1] : N[1] - margin[1] + shift[1],
+        ].set(image)
+        return image_out
+    elif len(N) == 3:
+        image_out = jnp.zeros(N)
+        image_out = image_out.at[
+            margin[0] + shift[0] : N[0] - margin[0] + shift[0],
+            margin[1] + shift[1] : N[1] - margin[1] + shift[1],
+            margin[2] + shift[2] : N[2] - margin[2] + shift[2],
+        ].set(image)
 
-    image_out = jnp.zeros(N)
-    image_out = image_out.at[
-        margin[0] + shift[0] : N[0] - margin[0] + shift[0],
-        margin[1] + shift[1] : N[1] - margin[1] + shift[1],
-        margin[2] + shift[2] : N[2] - margin[2] + shift[2],
-    ].set(image)
-
-    return image_out
+        return image_out
 
 
 def point_plane(num_points, N, margin):
@@ -77,6 +84,74 @@ def point_plane(num_points, N, margin):
     return positions
 
 
+def attenuation_mask_directional_3d(volume, azimuth_deg, elevation_deg, dx, mu):
+    azimuth_rad = np.deg2rad(azimuth_deg)
+    elevation_rad = np.deg2rad(elevation_deg)
+
+    ux = np.cos(elevation_rad) * np.cos(azimuth_rad)
+    uy = np.cos(elevation_rad) * np.sin(azimuth_rad)
+    uz = np.sin(elevation_rad)
+
+    depth, height, width = volume.shape
+
+    x_indices = np.arange(width)
+    y_indices = np.arange(height)
+    z_indices = np.arange(depth)
+    X, Y, Z = np.meshgrid(x_indices, y_indices, z_indices, indexing="ij")
+
+    distances = ux * X * dx + uy * Y * dx + uz * Z * dx
+
+    mask = np.exp(-mu * distances)
+
+    result = mask * volume
+    return result
+
+
+def generate_vessels_3d(N, batch_size, shrink_factor=1):
+    sim = VSystemGenerator(tissue_volume=N * shrink_factor, d0_mean=20.0, d0_std=5.0)
+    vessels_batch, n_iters = sim.create_networks(batch_size)
+    if shrink_factor != 1:
+        vessels_batch = [
+            scipy.ndimage.zoom(vessels_batch[i], 1 / shrink_factor)
+            for i in range(len(vessels_batch))
+        ]
+    return vessels_batch, n_iters
+
+
+def apply_attenuation_masks(vessels, azimuth_deg, elevation_deg, dx, mu):
+    """Applies directional attenuation masks to a batch of vessel data."""
+    mask_vmap = vmap(
+        attenuation_mask_directional_3d, in_axes=(0, None, None, None, None)
+    )
+    return mask_vmap(vessels, azimuth_deg, elevation_deg, dx, mu)
+
+
+def process_vessels(
+    dim,
+    tissue_volume,
+    batch_size,
+    shrink_factor,
+    lighting_attenuation,
+    azimuth_deg,
+    elevation_deg,
+    dx,
+    mu,
+):
+    """Generates and optionally applies attenuation to a batch of vessels."""
+    vessels_batch, n_iters = generate_vessels_3d(
+        tissue_volume, batch_size, shrink_factor
+    )
+    if lighting_attenuation:
+        vessels_batch = apply_attenuation_masks(
+            vessels_batch, azimuth_deg, elevation_deg, dx, mu
+        )
+
+    if dim == 2:
+        vessels_batch = np.sum(vessels_batch, axis=1)
+
+    return vessels_batch, n_iters
+
+
 if __name__ == "__main__":
     # Signal handling
     def signal_handler(signum, frame):
@@ -91,6 +166,8 @@ if __name__ == "__main__":
     (
         BATCH_SIZE,
         N,
+        SHRINK_FACTOR,
+        DIMS,
         DX,
         C,
         CFL,
@@ -100,6 +177,10 @@ if __name__ == "__main__":
         NUM_SENSORS,
         SOUND_SPEED_PERIODICITY,
         SOUND_SPEED_VARIATION_AMPLITUDE,
+        LIGHTING_ATTENUATION,
+        AZIMUTH_DEG,
+        ELEVATION_DEG,
+        MU,
     ) = util.parse_params()
 
     parser = argparse.ArgumentParser()
@@ -118,19 +199,39 @@ if __name__ == "__main__":
     # ----------------------
 
     # Generate vessels
-    tissue_margin = 2 * (np.array(TISSUE_MARGIN) + np.array([PML_MARGIN] * 3))
+    tissue_margin = 2 * (np.array([PML_MARGIN] * 3) + np.array([PML_MARGIN] * 3))
     tissue_volume = np.array(N) - tissue_margin
     print(f"Tissue volume: {tissue_volume}")
-    shrink_factor = (
-        2  # VSystemGenerator requires a minimum volume size to function properly
+    vessels_batch, n_iters = generate_vessels_3d(
+        tissue_volume, BATCH_SIZE, shrink_factor=3
     )
-    sim = VSystemGenerator(tissue_volume=tissue_volume * shrink_factor)
-    vessels_batch, n_iters = sim.create_networks(BATCH_SIZE)
-    # shrink the vessels
-    vessels_batch = [
-        scipy.ndimage.zoom(vessels_batch[i], 1 / shrink_factor)
-        for i in range(len(vessels_batch))
-    ]
+
+    if DIMS == 2:
+        OUT_PATH = os.path.join(OUT_PATH, "2d/")
+        N = N[:2]
+        DX = DX[:2]
+    else:
+        SHRINK_FACTOR = 2
+    
+    os.makedirs(OUT_PATH, exist_ok=True)
+    os.makedirs(f"{OUT_PATH}LNet/", exist_ok=True)
+    os.makedirs(f"{OUT_PATH}p0/", exist_ok=True)
+    os.makedirs(f"{OUT_PATH}sensors/", exist_ok=True)
+    os.makedirs(f"{OUT_PATH}p_data/", exist_ok=True)
+    os.makedirs(f"{OUT_PATH}c/", exist_ok=True)
+
+    vessels_batch, n_iters = process_vessels(
+        DIMS,
+        tissue_volume,
+        BATCH_SIZE,
+        SHRINK_FACTOR,
+        LIGHTING_ATTENUATION,
+        AZIMUTH_DEG,
+        ELEVATION_DEG,
+        DX[0],
+        MU,
+    )
+
     # Save vessels
     folder_index = (
         max(
@@ -160,9 +261,16 @@ if __name__ == "__main__":
     time_axis = TimeAxis.from_medium(medium, cfl=CFL)
 
     # Set up the sensors
-    margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN] * 3)
-    sensor_positions = point_plane(NUM_SENSORS, N, margin)
-    sensors_obj = BLISensors(sensor_positions, N)
+    if DIMS == 2:
+
+        # sensor_positions = np.lin
+        
+        sensors_obj = get_line_transducer(domain, PML_MARGIN+SENSOR_MARGIN[0], N[1]-SENSOR_MARGIN[1]*2)
+    elif DIMS == 3:
+        print(DIMS)
+        margin = np.array(SENSOR_MARGIN) + np.array([PML_MARGIN] * 3)
+        sensor_positions = point_plane(NUM_SENSORS, N, margin)
+        sensors_obj = BLISensors(sensor_positions, N)
 
     @util.timer
     @jit

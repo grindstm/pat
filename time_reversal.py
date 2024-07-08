@@ -44,60 +44,23 @@ def lazy_time_reversal(p0, p_data, sensor_positions):
 
     p0 = FourierSeries.empty(domain)
 
-    p_grad = grad(mse_loss)(p0, p_data)
+    loss, gradient = value_and_grad(mse_loss)(p0, p_data)
 
-    return -p_grad
-
-
-# @partial(jit, static_argnums=(3, 4))
-# def iterative_time_reversal(
-#     p0, p_data, sensor_positions, num_iterations=10, learning_rate=0.1
-# ):
-#     mses = jnp.zeros(num_iterations)
-
-#     sensors_obj = BLISensors(positions=sensor_positions, n=N)
-
-#     mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2] :].set(0)
-#     mask = FourierSeries(mask, domain)
-
-#     def mse_loss(p0, p_data):
-#         p0 = p0.replace_params(p0.params * mask.params)
-#         p_pred = simulate(p0, sensors_obj=sensors_obj)[..., 0]
-#         return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2)
-
-#     p0 = FourierSeries.empty(domain)
-
-#     # for i in range(num_iterations):
-#     #     loss, gradients = value_and_grad(mse_loss)(p0, p_data)
-#     #     mses.append(loss)
-#     #     # p0 = p0.replace_params(p0.params)
-#     #     p0 -= learning_rate * gradients
-
-#     def update(p0, i):
-#         loss, gradients = value_and_grad(mse_loss)(p0, p_data)
-#         p0 -= learning_rate * gradients
-
-#         # return p0, (p0, loss)  # Pass both updated p0 and loss
-#         return p0, loss
-
-#     # Use scan to perform the iterations
-#     p0, mses = scan(update, p0, jnp.arange(num_iterations))
-
-#     return p0, mses
+    return -gradient, loss
 
 
 @partial(jit, static_argnums=(3, 4))
 def iterative_time_reversal(
     p0, p_data, sensor_positions, num_iterations=10, learning_rate=0.1
 ):
+    mses = jnp.zeros(num_iterations)
+
     sensors_obj = BLISensors(positions=sensor_positions, n=N)
 
-    # Apply a mask to ignore certain regions during optimization
     mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2] :].set(0)
     mask = FourierSeries(mask, domain)
 
     def mse_loss(p0, p_data):
-        # Apply mask to p0 parameters
         p0 = p0.replace_params(p0.params * mask.params)
         p_pred = simulate(p0, sensors_obj=sensors_obj)[..., 0]
         return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2)
@@ -113,6 +76,35 @@ def iterative_time_reversal(
     _, (all_p0s, mses) = scan(update, p0, None, length=num_iterations)
 
     return all_p0s, mses
+
+
+# @partial(jit, static_argnums=(3, 4))
+# def iterative_time_reversal(
+#     p0, p_data, sensor_positions, num_iterations=10, learning_rate=0.1
+# ):
+#     sensors_obj = BLISensors(positions=sensor_positions, n=N)
+
+#     # Mask to zero regions outside the tissue
+#     mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2] :].set(0)
+#     mask = FourierSeries(mask, domain)
+
+#     def mse_loss(p0, p_data):
+#         # Apply mask to p0 parameters
+#         p0 = p0.replace_params(p0.params * mask.params)
+#         p_pred = simulate(p0, sensors_obj=sensors_obj)[..., 0]
+#         return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2)
+
+#     p0 = FourierSeries.empty(domain)
+
+#     def update(p0, i):
+#         loss, gradients = value_and_grad(mse_loss)(p0, p_data)
+#         new_p0 = p0 - learning_rate * gradients
+#         return new_p0, (new_p0.on_grid, loss)
+
+#     # Initialize p0 for scan and perform the iterations
+#     _, (all_p0s, mses) = scan(update, p0, None, length=num_iterations)
+
+#     return all_p0s, mses
 
 
 @partial(jit, static_argnums=(3))

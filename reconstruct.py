@@ -2,6 +2,7 @@ import sys
 import os
 import signal
 import yaml
+import argparse
 
 import jax
 import jax.numpy as jnp
@@ -46,7 +47,12 @@ def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
 
 
 if __name__ == "__main__":
-    NUM_ITERATIONS, LEARNING_RATE, NOISE_AMPLITUDE = yaml.safe_load(open("params.yaml"))["reconstruct"].values() 
+    params = yaml.safe_load(open("params.yaml"))["reconstruct"]
+    NOISE_AMPLITUDE = params["noise_amplitude"]
+    NUM_ITERATIONS = params["num_iterations"]
+    LEARNING_RATE = params["learning_rate"]
+    N = util.parse_params()[1]
+
     # Signal handling
     def signal_handler(signum, frame):
         global exit_flag
@@ -57,15 +63,13 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     # Parse arguments
-    if len(sys.argv) == 2:
-        IN_PATH = sys.argv[1]
-        OUT_PATH = sys.argv[1]
-    elif len(sys.argv) == 3:
-        IN_PATH = sys.argv[1]
-        OUT_PATH = sys.argv[2]
-    else:
-        IN_PATH = "data/"
-        OUT_PATH = "data/"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("out_path", type=str, default="data//", help="Output path")
+    args = parser.parse_args()
+    OUT_PATH = args.out_path
+    if len(N) == 2:
+        os.path.join(OUT_PATH, "2d/")
+    IN_PATH = OUT_PATH
 
     # Output directories
     os.makedirs(OUT_PATH, exist_ok=True)
@@ -91,14 +95,16 @@ if __name__ == "__main__":
         k0, k1 = jax.random.PRNGKey(int(time.time()))
         p_data_noisy = add_colored_noise(k1, p_data, amplitude=NOISE_AMPLITUDE)
 
+        # ----------------------------------------
         # p_r = time_reversal.lazy_time_reversal(p0, p_data_noisy, sensor_positions)
+        # p_rs = [p_r.on_grid]
 
-        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=NUM_ITERATIONS, learning_rate=LEARNING_RATE) 
+        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=NUM_ITERATIONS, learning_rate=LEARNING_RATE)
         print(f"Mean squared errors: {mses}")
-        
+
         # p_r, losses = time_reversal.iterative_time_reversal_optimized(p0, p_data_noisy, sensor_positions, num_iterations=4)
         # print(f"Losses: {losses}")
-
+        # ----------------------------------------
         # print(len(p_rs))
 
         for i, p_r in enumerate(p_rs):
