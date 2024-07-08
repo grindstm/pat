@@ -34,13 +34,14 @@ stages:
     params: 
       - geometry
       # - simulate
-    # always_changed: true
+    always_changed: true
 
-  visualize:
-    cmd: python vis.py
-    deps:
-    - vis.py
-    - data_/p0/
+  # visualize:
+  #   cmd: python vis.py
+  #   deps:
+  #   - vis.py
+  #   - data_/p0/
+
     # - data_/p_r/
     # - data_/p_data/
     # - data_/sensors/

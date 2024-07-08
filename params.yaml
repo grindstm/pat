@@ -1,9 +1,11 @@
 
 generate_data:
-  batch_size: 5
+  batch_size: 3
 
 geometry:
   N: [128, 128, 128]
+  shrink_factor: 2
+  dims: 3
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
   c: 1500
   cfl: 0.3
@@ -13,13 +15,19 @@ geometry:
   num_sensors: 81
 
   sound_speed_periodicity: 2
-  sound_speed_variation_amplitude: 0
+  sound_speed_variation_amplitude: 10
+
+lighting:
+  lighting_attenuation: False
+  azimuth_deg: 0
+  elevation_deg: 0
+  mu: 50 # attenuation coefficient
 
 # simulate:
 
 
 reconstruct:
   noise_amplitude: 0.05
-  num_iteraions: 4
+  num_iterations: 4
   learning_rate: 1
 

@@ -33,6 +33,8 @@ def parse_params():
     params = yaml.safe_load(open("params.yaml"))
     BATCH_SIZE = params["generate_data"]["batch_size"]
     N = tuple(params["geometry"]["N"])
+    SHRINK_FACTOR = params["geometry"]["shrink_factor"]
+    DIMS = params["geometry"]["dims"]
     DX = tuple(params["geometry"]["dx"])
     C = params["geometry"]["c"]
     CFL = params["geometry"]["cfl"]
@@ -44,7 +46,11 @@ def parse_params():
     SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"][
         "sound_speed_variation_amplitude"
     ]
-    return BATCH_SIZE, N, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE
+    LIGHTING_ATTENUATION = params["lighting"]["lighting_attenuation"]
+    AZIMUTH_DEG = params["lighting"]["azimuth_deg"]
+    ELEVATION_DEG = params["lighting"]["elevation_deg"]
+    MU = params["lighting"]["mu"]
+    return BATCH_SIZE, N, SHRINK_FACTOR, DIMS, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE, LIGHTING_ATTENUATION, AZIMUTH_DEG, ELEVATION_DEG, MU
 
 # Parse arguments
 def parse_args():
@@ -59,8 +65,8 @@ def parse_args():
         OUT_PATH = "data/"
     return IN_PATH, OUT_PATH
     # Output directories
-    os.makedirs(OUT_PATH, exist_ok=True)
-    os.makedirs(f"{OUT_PATH}p_r/", exist_ok=True)
+# os.makedirs(OUT_PATH, exist_ok=True)
+# os.makedirs(f"{OUT_PATH}p_r/", exist_ok=True)
 
 
 def loop(func):

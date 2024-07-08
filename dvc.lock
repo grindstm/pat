@@ -5,17 +5,19 @@ stages:
     deps:
     - path: generate_data.py
       hash: md5
-      md5: ec7364cb15e9a9d9ffbe06967e495afa
-      size: 6659
+      md5: e78555fb06699a9c5985d66561310792
+      size: 9820
     params:
       params.yaml:
         generate_data:
-          batch_size: 5
+          batch_size: 3
         geometry:
           N:
           - 128
           - 128
           - 128
+          shrink_factor: 2
+          dims: 3
           dx:
           - 0.0001
           - 0.0001
@@ -33,33 +35,33 @@ stages:
           - 5
           num_sensors: 81
           sound_speed_periodicity: 2
-          sound_speed_variation_amplitude: 0
+          sound_speed_variation_amplitude: 10
     outs:
     - path: data_/LNet/
       hash: md5
-      md5: 9469261f522cf9d3b91fbe92696d4555.dir
-      size: 4153560
-      nfiles: 5
+      md5: fc7a347f7c21f4a0dd06f5721fbc9aef.dir
+      size: 1536384
+      nfiles: 3
     - path: data_/c/
       hash: md5
-      md5: e46182907a34905ac6765731e9e7eb58.dir
-      size: 41943680
-      nfiles: 5
+      md5: 58d1ebca32633fe0875010b714f940c2.dir
+      size: 25166208
+      nfiles: 3
     - path: data_/p0/
       hash: md5
-      md5: 9b57e0d18859ed75dc72c6bcfae4474a.dir
-      size: 41943680
-      nfiles: 5
+      md5: c6d134155a6a9d0cfd869e22719bd5ee.dir
+      size: 25166208
+      nfiles: 3
     - path: data_/p_data/
       hash: md5
-      md5: 906ed29f6bb6848c998320f055c37cd2.dir
-      size: 1189720
-      nfiles: 5
+      md5: f69ba36d41e53516b87de33ca6519b90.dir
+      size: 713832
+      nfiles: 3
     - path: data_/sensors/
       hash: md5
-      md5: b81c423b118e41c11a529e6c11111ba5.dir
-      size: 5500
-      nfiles: 5
+      md5: dc643622f8a904cee4bb712a26e3eb00.dir
+      size: 3300
+      nfiles: 3
   simulate:
     cmd: python simulate.py data/LNet/ data/
     deps:
@@ -110,27 +112,27 @@ stages:
     deps:
     - path: data_/p0/
       hash: md5
-      md5: d69ce6fbe46917193afcb9bb90e88854.dir
-      size: 16777472
-      nfiles: 2
+      md5: c6d134155a6a9d0cfd869e22719bd5ee.dir
+      size: 25166208
+      nfiles: 3
     - path: data_/p_data/
       hash: md5
-      md5: 328d506c7faa6782728aaf871413debf.dir
-      size: 475888
-      nfiles: 2
+      md5: f69ba36d41e53516b87de33ca6519b90.dir
+      size: 713832
+      nfiles: 3
     - path: data_/sensors/
       hash: md5
-      md5: fcb372037f9c25beb3229124df894f7f.dir
-      size: 2200
-      nfiles: 2
+      md5: dc643622f8a904cee4bb712a26e3eb00.dir
+      size: 3300
+      nfiles: 3
     - path: reconstruct.py
       hash: md5
-      md5: 7e80bdfdfd596d7c6f50f30bb8f5c5d1
-      size: 3368
+      md5: fe34d8164b8b6900387d4457b754cbbf
+      size: 3650
     - path: time_reversal.py
       hash: md5
-      md5: 113c0da21aed3db8aed88b124ac38650
-      size: 6189
+      md5: 2869518b99a9c0becbd5cd76ab56534f
+      size: 6036
     params:
       params.yaml:
         geometry:
@@ -138,6 +140,8 @@ stages:
           - 128
           - 128
           - 128
+          shrink_factor: 2
+          dims: 3
           dx:
           - 0.0001
           - 0.0001
@@ -155,13 +159,13 @@ stages:
           - 5
           num_sensors: 81
           sound_speed_periodicity: 2
-          sound_speed_variation_amplitude: 0
+          sound_speed_variation_amplitude: 10
     outs:
     - path: data_/p_r/
       hash: md5
-      md5: d751713988987e9331980363e24189ce.dir
-      size: 0
-      nfiles: 0
+      md5: aefc6a0ea65fbfbe82d247cfb92c43ea.dir
+      size: 100664832
+      nfiles: 12
   visualize:
     cmd: python vis.py
     deps:

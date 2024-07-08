@@ -1,6 +1,6 @@
 /p_r
 /p_r
-.npy
+*.npy
 *.pyc
 archive/
 data/
