@@ -5,19 +5,19 @@ stages:
     deps:
     - path: generate_data.py
       hash: md5
-      md5: e78555fb06699a9c5985d66561310792
-      size: 9820
+      md5: f65a257e862ea0995370f8b608b1a776
+      size: 13292
     params:
       params.yaml:
         generate_data:
           batch_size: 3
         geometry:
           N:
-          - 128
-          - 128
-          - 128
-          shrink_factor: 2
-          dims: 3
+          - 256
+          - 256
+          - 256
+          shrink_factor: 1
+          dims: 2
           dx:
           - 0.0001
           - 0.0001
@@ -39,28 +39,28 @@ stages:
     outs:
     - path: data_/LNet/
       hash: md5
-      md5: fc7a347f7c21f4a0dd06f5721fbc9aef.dir
-      size: 1536384
+      md5: 31fc373de5484ff979b469c9bb30f22d.dir
+      size: 26997120
       nfiles: 3
     - path: data_/c/
       hash: md5
-      md5: 58d1ebca32633fe0875010b714f940c2.dir
-      size: 25166208
+      md5: 07babc6636a57a3a03d1186cdf6b2655.dir
+      size: 1573248
       nfiles: 3
     - path: data_/p0/
       hash: md5
-      md5: c6d134155a6a9d0cfd869e22719bd5ee.dir
-      size: 25166208
+      md5: c17bd9cf4e23b4bc0eb6ad7137f18b52.dir
+      size: 7864704
       nfiles: 3
     - path: data_/p_data/
       hash: md5
-      md5: f69ba36d41e53516b87de33ca6519b90.dir
-      size: 713832
+      md5: 7243596635a8950e6f2df62af5947a11.dir
+      size: 11784264
       nfiles: 3
     - path: data_/sensors/
       hash: md5
-      md5: dc643622f8a904cee4bb712a26e3eb00.dir
-      size: 3300
+      md5: dd11feb40b1b860c77087d7f3819fdd4.dir
+      size: 4272
       nfiles: 3
   simulate:
     cmd: python simulate.py data/LNet/ data/
