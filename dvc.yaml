@@ -18,7 +18,7 @@ stages:
           # persist: true
       - data_/c/
           # persist: true
-    # always_changed: true
+    always_changed: true
 
   reconstruct:
     cmd: python reconstruct.py data_/
