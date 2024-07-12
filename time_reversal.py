@@ -3,9 +3,10 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax import grad, jit, value_and_grad
+from jax import grad, jit, value_and_grad, vmap, nn
 from jax.lax import scan
 from jax import random
+from jaxdf.operators import compose
 
 from jwave import FourierSeries
 from jwave import FourierSeries
@@ -13,29 +14,113 @@ from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
 from jwave.signal_processing import smooth
 
-import optax
-
-import util
-
-
-# Parse parameters
-BATCH_SIZE, N, SHRINK_FACTOR, DIMS, DX, C, CFL, PML_MARGIN, TISSUE_MARGIN, SENSOR_MARGIN, NUM_SENSORS, SOUND_SPEED_PERIODICITY, SOUND_SPEED_VARIATION_AMPLITUDE, LIGHTING_ATTENUATION, AZIMUTH_DEG, ELEVATION_DEG, MU = util.parse_params()
+from optax import adam
+import numpy as np
+import util as u
+from generate_data import attenuation_mask_directional_2d, add_margin
 
 # Set up the simulator
-domain = Domain(N, DX)
-sound_speed = jnp.ones(N) * C
-medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=PML_MARGIN)
-time_axis = TimeAxis.from_medium(medium, cfl=CFL)
+# ----------------------
+if u.DIMS == 2:
+    N = u.N[:2]
+    DX = u.DX[:2]
+
+# domain = Domain(N, DX)
+# sound_speed = jnp.ones(N) * u.C
+# medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=u.PML_MARGIN)
+# time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
 
 
-def simulate(p0, sensors_obj):
-    return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
+# def simulate(p0, sensors_obj):
+#     return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
+import matplotlib.pyplot as plt
+
+# _________________________________________________________________
+
+
+def multi_illumination(
+    p_data, sensor_positions, angles, num_iterations=10, learning_rate=1
+):
+    domain = Domain(N, DX)
+    medium = Medium(domain=domain, sound_speed=jnp.ones(N) * u.C, pml_size=u.PML_MARGIN)
+    time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
+
+    vessels_shape = tuple(N - np.array(2 * [2 * u.PML_MARGIN]))
+
+    # attenuation_masks = vmap(
+    #     attenuation_mask_directional_2d, in_axes=(0, None, None, None)
+    # )(angles, jnp.ones(vessels_shape), DX[0], u.MU)
+    # attenuation_masks = vmap(add_margin, in_axes=(0, None, None, None))(
+    #     attenuation_masks, N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0)
+    # )
+    # attenuation_masks = FourierSeries(jnp.expand_dims(attenuation_masks, -1), domain)
+
+    pml_mask = add_margin(
+        jnp.ones(vessels_shape), N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0)
+    )
+    pml_mask = FourierSeries(jnp.expand_dims(pml_mask, -1), domain)
+
+    sensors_obj = BLISensors(positions=np.array(sensor_positions), n=domain.N)
+
+    # @jit
+    def simulate(medium, time_axis, p0):
+        return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
+
+
+    def mse_loss(p0, c, attenuation_mask, p_data=p_data):
+        p0 = p0.replace_params(p0.params * attenuation_mask.params)
+        c = u.C - 10 + 100.0 * compose(c.params)(nn.sigmoid) * pml_mask
+        medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN)
+        p_pred = simulate(medium, time_axis, p0)
+        return 0.5 * jnp.sum(jnp.abs(p_pred - p_data) ** 2)
+    
+    # batch_compiled_simulate = vmap(simulate, in_axes=(None, None, 0))
+    
+    # def mse_loss(p0, c, p_data=p_data):
+    #     p0 = p0.replace_params(p0.params * attenuation_masks.params)
+    #     c = u.C - 10 + 100.0 * compose(c.params)(nn.sigmoid) * pml_mask
+    #     medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN)
+    #     p_pred = batch_compiled_simulate(medium, time_axis, p0)
+    #     return 0.5 * jnp.sum(jnp.abs(p_pred - p_data) ** 2)
+
+    def update(p0, c):
+        for angle in angles:
+            attenuation_mask = attenuation_mask_directional_2d(angle, jnp.ones(vessels_shape), DX[0], u.MU)
+
+            attenuation_mask =add_margin(attenuation_mask, N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0))
+            attenuation_mask = FourierSeries(jnp.expand_dims(attenuation_mask, -1), domain)
+
+            loss, gradients = value_and_grad(mse_loss, argnums=(0, 1))(p0, c, attenuation_mask)
+            new_p0 = p0 - learning_rate * gradients[0]
+            new_c = c - learning_rate * gradients[1]
+            mses.append(loss)
+            p_rs.append(new_p0.on_grid)
+            c_rs.append(new_c.on_grid)
+        return new_p0, new_c
+
+    # p0 = jnp.empty([u.NUM_LIGHTING_ANGLES, *N])
+    # p0 = vmap(FourierSeries, (0, None))(p0, domain)
+
+    p0 = FourierSeries(jnp.expand_dims(jnp.zeros(N), -1), domain)
+    c = FourierSeries(jnp.expand_dims(jnp.ones(N) * u.C, -1), domain)
+
+    mses = []
+    p_rs = []
+    c_rs = []
+    for i in range(num_iterations):
+        print(i)
+        p0, c = update(p0, c)
+
+    return p_rs, c_rs, mses
+
+
+# _________________________________________________________________
 
 
 @jit
-def lazy_time_reversal(p0, p_data, sensor_positions):
+def lazy_time_reversal(p_data, sensor_positions):
 
-    sensors_obj = BLISensors(positions=sensor_positions, n=N)
+    sensors_obj = BLISensors(positions=sensor_positions, n=u.N)
 
     def mse_loss(p0, p_data):
         p0 = p0.replace_params(p0.params)
@@ -55,9 +140,9 @@ def iterative_time_reversal(
 ):
     mses = jnp.zeros(num_iterations)
 
-    sensors_obj = BLISensors(positions=sensor_positions, n=N)
+    sensors_obj = BLISensors(positions=sensor_positions, n=u.N)
 
-    mask = jnp.ones_like(p0).at[..., N[2] - PML_MARGIN - SENSOR_MARGIN[2] :].set(0)
+    mask = jnp.ones_like(p0).at[..., N[2] - u.PML_MARGIN - u.SENSOR_MARGIN[2] :].set(0)
     mask = FourierSeries(mask, domain)
 
     def mse_loss(p0, p_data):
@@ -109,7 +194,7 @@ def iterative_time_reversal(
 
 @partial(jit, static_argnums=(3))
 def iterative_time_reversal_optimized(p0, p_data, sensor_positions, num_iterations=10):
-    sensors_obj = BLISensors(positions=sensor_positions, n=N)
+    sensors_obj = BLISensors(positions=sensor_positions, n=u.N)
 
     # Define the loss function
     def mse_loss(p0):
@@ -131,47 +216,3 @@ def iterative_time_reversal_optimized(p0, p_data, sensor_positions, num_iteratio
     final_opt_state, (p0, losses) = scan(update, opt_state, None, length=num_iterations)
 
     return p0, losses
-
-
-#     @jit
-#     def lazy_time_reversal(p0, p_data,sensors_obj):
-#         def mse_loss(p0_params, p_data):
-#             p0 = p0.replace_params(p0_params)
-#             p_pred = simulate(p0, sensors_obj=sensors_obj)[..., 0]
-#             regularization_strength = 0.01  # This is a hyperparameter you can tune
-#             l2_norm = regularization_strength * jnp.sum(p0_params**2)
-#             return 0.5 * jnp.sum(jnp.abs(p_pred - p_data[..., 0]) ** 2) + l2_norm
-
-#         p0 = FourierSeries.empty(domain)
-
-#         p_grad = grad(mse_loss)(p0, p_data)
-
-#         return -p_grad
-
-
-#     # @jit
-#     # def iterative_time_reversal(p0, p_data, sensors_obj, num_iters=2, learning_rate=0.5):
-#     #     def mse_loss(p0_params):
-#     #         # Reconstruct p0 from parameters
-#     #         p0_reconstructed = FourierSeries(p0_params, domain)
-#     #         # Run simulation with current p0 estimate
-#     #         p_pred = simulate(p0_reconstructed, sensors_obj=sensors_obj)[..., 0]
-#     #         # Calculate mean squared error
-#     #         return 0.5 * jnp.sum(jnp.square(p_pred - p_data[..., 0]))
-
-#     #     # Initialize parameters (could also be passed as an argument)
-#     #     p0_params = p0.params
-
-#     #     # Define the gradient function
-#     #     grad_loss = grad(mse_loss)
-
-#     #     # Iterative update
-#     #     for _ in range(num_iters):
-#     #         # Compute gradients
-#     #         gradients = grad_loss(p0_params)
-
-#     #         # Update parameters using gradient descent
-#     #         p0_params -= learning_rate * gradients
-
-#     #     # Return the final reconstructed parameters
-#     #     return FourierSeries(p0_params, domain)

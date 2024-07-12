@@ -2,7 +2,7 @@ file:
   data_path: data_/
 
 generate_data:
-  batch_size: 3
+  batch_size: 2
 
 geometry:
   N: [256, 256, 256] # including margins. Use power of 2
@@ -21,7 +21,7 @@ geometry:
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 10
+  num_lighting_angles: 5
   mu: 50 # attenuation coefficient
 
   # azimuth_deg: 0
@@ -32,6 +32,6 @@ lighting:
 
 reconstruct:
   noise_amplitude: 0.05
-  num_iterations: 4
-  learning_rate: 1
+  num_iterations: 10
+  learning_rate: .1
 

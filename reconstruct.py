@@ -1,23 +1,23 @@
-import sys
 import os
 import signal
-import yaml
 import argparse
+import time
 
 import jax
 import jax.numpy as jnp
-from jax import grad, jit
 from jax import random
 
 from jwave.signal_processing import smooth
 
-import time
 import time_reversal
+import util as u
 
-import util
+from jax import lax
+def clear_jax_cache():
+    lax.clear_caches()
 
 
-def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
+def add_colored_noise(key, data, blackman_window_exponent=1, amplitude=0.2):
     """
     Add colored noise to the data
 
@@ -25,7 +25,7 @@ def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
     ----------
     key : PRNGKey
         Random key
-    p_data : ndarray
+    data : ndarray
         Pressure data
     blackman_window_exponent : float
         Exponent of the Blackman window
@@ -40,19 +40,14 @@ def add_colored_noise(key, p_data, blackman_window_exponent=1, amplitude=0.2):
     ----------
     https://ucl-bug.github.io/jwave/notebooks/ivp/homogeneous_medium_backprop.html
     """
-    noise = random.normal(random.PRNGKey(key), p_data.shape)
+    noise = random.normal(key, data.shape)
     for i in range(noise.shape[1]):
         noise = noise.at[:, i].set(smooth(noise[:, i], blackman_window_exponent))
-    return p_data + amplitude * noise
+    return data + amplitude * noise
 
+add_colored_noise_vmap = jax.vmap(add_colored_noise, in_axes=(0, 0, None, None))
 
 if __name__ == "__main__":
-    params = yaml.safe_load(open("params.yaml"))["reconstruct"]
-    NOISE_AMPLITUDE = params["noise_amplitude"]
-    NUM_ITERATIONS = params["num_iterations"]
-    LEARNING_RATE = params["learning_rate"]
-    N = util.parse_params()[1]
-
     # Signal handling
     def signal_handler(signum, frame):
         global exit_flag
@@ -62,47 +57,62 @@ if __name__ == "__main__":
     exit_flag = False
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("out_path", type=str, default="data//", help="Output path")
+    parser.add_argument(
+        "data_path", type=str, default=None, help="data path", nargs="?"
+    )
     args = parser.parse_args()
-    OUT_PATH = args.out_path
-    if len(N) == 2:
-        os.path.join(OUT_PATH, "2d/")
-    IN_PATH = OUT_PATH
+    if args.data_path is not None:
+        u.DATA_PATH = args.data_path
 
-    # Output directories
-    os.makedirs(OUT_PATH, exist_ok=True)
-    os.makedirs(f"{OUT_PATH}p_r/", exist_ok=True)
+    os.makedirs(u.DATA_PATH, exist_ok=True)
+    os.makedirs(u.DATA_PATH + "p_r/", exist_ok=True)
+    os.makedirs(u.DATA_PATH + "c_r/", exist_ok=True)
 
-    @util.timer
+    @u.timer
     def reconstruct(file):
         # print current wall time
         print(time.time())
 
         file_index = file.split(".")[0]
 
-        # # Set up the sensors
-        sensor_positions = jnp.load(f"{OUT_PATH}sensors/{file}")
+        # Set up the sensors
+        # ----------------------
+        sensor_positions = jnp.load(f"{u.DATA_PATH}sensors/{file}")
 
-        p0_file = f"{IN_PATH}p0/{file_index}.npy"
-        print(p0_file)
-        p0 = jnp.load(p0_file)
-        p_data_file = f"{IN_PATH}p_data/{file_index}.npy"
+        # Load the data
+        # ----------------------
+        p_data_file = f"{u.DATA_PATH}p_data/{file_index}.npy"
         p_data = jnp.load(p_data_file)
+        angles_file = f"{u.DATA_PATH}angles/{file_index}.npy"
+        angles = jnp.load(angles_file)
+        
+        # p0_file = f"{u.DATA_PATH}p0/{file_index}.npy"
+        # p0 = jnp.load(p0_file)
+        # print(p0_file)
+
+        # c_file = f"{u.DATA_PATH}c/{file_index}.npy"
+        # c = jnp.load(c_file)
 
         # Add noise to p_data
-        k0, k1 = jax.random.PRNGKey(int(time.time()))
-        p_data_noisy = add_colored_noise(k1, p_data, amplitude=NOISE_AMPLITUDE)
+        # ----------------------
+        key = jax.random.PRNGKey(int(time.time()))
+        keys = jax.random.split(key, u.NUM_LIGHTING_ANGLES)
+        add_noise_vmap = jax.vmap(add_colored_noise, in_axes=(0, 0, None))
 
+        p_data_noisy = add_noise_vmap(keys, p_data, u.NOISE_AMPLITUDE)
+ 
+        # p_data_noisy = add_colored_noise(k1, p_data, amplitude=u.NOISE_AMPLITUDE)
         # ----------------------------------------
-        # p_r = time_reversal.lazy_time_reversal(p0, p_data_noisy, sensor_positions)
+        p_rs, c_rs, mses = time_reversal.multi_illumination(p_data_noisy, sensor_positions, angles, num_iterations=u.NUM_ITERATIONS, learning_rate=u.LEARNING_RATE)
+ 
+        # p_r = time_reversal.lazy_time_reversal(p_data_noisy, sensor_positions)
         # p_rs = [p_r.on_grid]
 
-        p_rs, mses = time_reversal.iterative_time_reversal(p0, p_data_noisy, sensor_positions, num_iterations=NUM_ITERATIONS, learning_rate=LEARNING_RATE)
-        print(f"Mean squared errors: {mses}")
+        # p_rs, mses = time_reversal.iterative_time_reversal(p_data_noisy, sensor_positions, num_iterations=NUM_ITERATIONS, learning_rate=LEARNING_RATE)
+        # print(f"Mean squared errors: {mses}")
 
-        # p_r, losses = time_reversal.iterative_time_reversal_optimized(p0, p_data_noisy, sensor_positions, num_iterations=4)
+        # p_r, losses = time_reversal.iterative_time_reversal_optimized(p_data_noisy, sensor_positions, num_iterations=4)
         # print(f"Losses: {losses}")
         # ----------------------------------------
         # print(len(p_rs))
@@ -110,18 +120,21 @@ if __name__ == "__main__":
         for i, p_r in enumerate(p_rs):
             if exit_flag:
                 break
-
-            p_r_file = f"{OUT_PATH}p_r/{file_index}_{i}.npy"
+            p_r_file = f"{u.DATA_PATH}p_r/{file_index}_{i}.npy"
             jnp.save(p_r_file, p_r.squeeze())
             print(f"Saved {p_r_file}")
 
-    for file in os.listdir(f"{IN_PATH}p0/"):
+            c_r_file = f"{u.DATA_PATH}c_r/{file_index}_{i}.npy"
+            jnp.save(c_r_file, c_rs[i].squeeze())
+            print(f"Saved {c_r_file}")
+
+    for file in os.listdir(f"{u.DATA_PATH}p0/"):
         if exit_flag:
             break
 
         print(f"Processing {file}")
         # p0 files which don't have a corresponding p_r file
-        if os.path.exists(OUT_PATH + f"p_r/{file.split('.')[0]}"):
+        if os.path.exists(u.DATA_PATH + f"p_r/{file.split('.')[0]}"):
             continue
 
         reconstruct(file)

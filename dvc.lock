@@ -5,12 +5,12 @@ stages:
     deps:
     - path: generate_data.py
       hash: md5
-      md5: f65a257e862ea0995370f8b608b1a776
-      size: 13292
+      md5: 3fc553a1ae8b772a2ceb46d9735c1801
+      size: 14535
     params:
       params.yaml:
         generate_data:
-          batch_size: 3
+          batch_size: 2
         geometry:
           N:
           - 256
@@ -39,29 +39,29 @@ stages:
     outs:
     - path: data_/LNet/
       hash: md5
-      md5: 31fc373de5484ff979b469c9bb30f22d.dir
-      size: 26997120
-      nfiles: 3
+      md5: e191985462d4b9ff91e7198ab527bbcf.dir
+      size: 692480
+      nfiles: 2
     - path: data_/c/
       hash: md5
-      md5: 07babc6636a57a3a03d1186cdf6b2655.dir
-      size: 1573248
-      nfiles: 3
+      md5: 2421d989d050e77f828357d324c1817c.dir
+      size: 1048832
+      nfiles: 2
     - path: data_/p0/
       hash: md5
-      md5: c17bd9cf4e23b4bc0eb6ad7137f18b52.dir
-      size: 7864704
-      nfiles: 3
+      md5: 5ae7d2962f295e8553a13cbbbcb20fec.dir
+      size: 2621696
+      nfiles: 2
     - path: data_/p_data/
       hash: md5
-      md5: 7243596635a8950e6f2df62af5947a11.dir
-      size: 11784264
-      nfiles: 3
+      md5: 12bfac744e95953abbdf9c4a337cef05.dir
+      size: 3897976
+      nfiles: 2
     - path: data_/sensors/
       hash: md5
-      md5: dd11feb40b1b860c77087d7f3819fdd4.dir
-      size: 4272
-      nfiles: 3
+      md5: 26428543ba02b6be4e869672d206195f.dir
+      size: 2848
+      nfiles: 2
   simulate:
     cmd: python simulate.py data/LNet/ data/
     deps:
@@ -112,36 +112,36 @@ stages:
     deps:
     - path: data_/p0/
       hash: md5
-      md5: c6d134155a6a9d0cfd869e22719bd5ee.dir
-      size: 25166208
-      nfiles: 3
+      md5: 1c13c66041a21a0880407c7cfe8811f7.dir
+      size: 1048832
+      nfiles: 2
     - path: data_/p_data/
       hash: md5
-      md5: f69ba36d41e53516b87de33ca6519b90.dir
-      size: 713832
-      nfiles: 3
+      md5: 7bad306763230a28d15faf2e1fe708aa.dir
+      size: 1559344
+      nfiles: 2
     - path: data_/sensors/
       hash: md5
-      md5: dc643622f8a904cee4bb712a26e3eb00.dir
-      size: 3300
-      nfiles: 3
+      md5: 26428543ba02b6be4e869672d206195f.dir
+      size: 2848
+      nfiles: 2
     - path: reconstruct.py
       hash: md5
-      md5: fe34d8164b8b6900387d4457b754cbbf
-      size: 3650
+      md5: 9bbbb1163226ab8a1b757909139b5e38
+      size: 4350
     - path: time_reversal.py
       hash: md5
-      md5: 2869518b99a9c0becbd5cd76ab56534f
-      size: 6036
+      md5: f25cddbcb8d34c4ff8f5de392c41dd03
+      size: 6799
     params:
       params.yaml:
         geometry:
           N:
-          - 128
-          - 128
-          - 128
-          shrink_factor: 2
-          dims: 3
+          - 256
+          - 256
+          - 256
+          shrink_factor: 1
+          dims: 2
           dx:
           - 0.0001
           - 0.0001
@@ -163,9 +163,9 @@ stages:
     outs:
     - path: data_/p_r/
       hash: md5
-      md5: aefc6a0ea65fbfbe82d247cfb92c43ea.dir
-      size: 100664832
-      nfiles: 12
+      md5: 57c04cc4853662c0588dbbe5ed32921e.dir
+      size: 5245440
+      nfiles: 20
   visualize:
     cmd: python vis.py
     deps:
