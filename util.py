@@ -10,6 +10,8 @@ try:
 except ImportError:
     pass
 
+# environment variable to prevent jax preallocation
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 def timer(func):
     """A decorator that prints the execution time of the function it decorates."""

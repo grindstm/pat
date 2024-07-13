@@ -19,21 +19,12 @@ import numpy as np
 import util as u
 from generate_data import attenuation_mask_directional_2d, add_margin
 
-# Set up the simulator
-# ----------------------
+import matplotlib.pyplot as plt
+
 if u.DIMS == 2:
     N = u.N[:2]
     DX = u.DX[:2]
 
-# domain = Domain(N, DX)
-# sound_speed = jnp.ones(N) * u.C
-# medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=u.PML_MARGIN)
-# time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
-
-
-# def simulate(p0, sensors_obj):
-#     return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
-import matplotlib.pyplot as plt
 
 # _________________________________________________________________
 
@@ -67,36 +58,29 @@ def multi_illumination(
         return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
 
 
-    def mse_loss(p0, c, attenuation_mask, p_data=p_data):
+    @jit
+    def mse_loss(p0, c, attenuation_mask, p_data):
         p0 = p0.replace_params(p0.params * attenuation_mask.params)
-        c = u.C - 10 + 100.0 * compose(c.params)(nn.sigmoid) * pml_mask
+        # c = u.C - 10 + 100.0 * compose(c.params)(nn.sigmoid) #* pml_mask
+        c=c.replace_params(c.params)
         medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN)
         p_pred = simulate(medium, time_axis, p0)
+        # p_pred = batch_compiled_simulate(medium, time_axis, p0)
         return 0.5 * jnp.sum(jnp.abs(p_pred - p_data) ** 2)
     
-    # batch_compiled_simulate = vmap(simulate, in_axes=(None, None, 0))
-    
-    # def mse_loss(p0, c, p_data=p_data):
-    #     p0 = p0.replace_params(p0.params * attenuation_masks.params)
-    #     c = u.C - 10 + 100.0 * compose(c.params)(nn.sigmoid) * pml_mask
-    #     medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN)
-    #     p_pred = batch_compiled_simulate(medium, time_axis, p0)
-    #     return 0.5 * jnp.sum(jnp.abs(p_pred - p_data) ** 2)
-
     def update(p0, c):
-        for angle in angles:
+        for i, angle in enumerate(angles):
             attenuation_mask = attenuation_mask_directional_2d(angle, jnp.ones(vessels_shape), DX[0], u.MU)
-
             attenuation_mask =add_margin(attenuation_mask, N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0))
             attenuation_mask = FourierSeries(jnp.expand_dims(attenuation_mask, -1), domain)
 
-            loss, gradients = value_and_grad(mse_loss, argnums=(0, 1))(p0, c, attenuation_mask)
+            loss, gradients = value_and_grad(mse_loss, argnums=(0, 1))(p0, c, attenuation_mask, p_data[i])
             new_p0 = p0 - learning_rate * gradients[0]
-            new_c = c - learning_rate * gradients[1]
+            new_c = c - 1000 * learning_rate * gradients[1]
             mses.append(loss)
             p_rs.append(new_p0.on_grid)
             c_rs.append(new_c.on_grid)
-        return new_p0, new_c
+        return new_p0, new_c, gradients
 
     # p0 = jnp.empty([u.NUM_LIGHTING_ANGLES, *N])
     # p0 = vmap(FourierSeries, (0, None))(p0, domain)
@@ -109,16 +93,88 @@ def multi_illumination(
     c_rs = []
     for i in range(num_iterations):
         print(i)
-        p0, c = update(p0, c)
+        p0, c, gradients = update(p0, c)
+        jnp.save(f"{u.DATA_PATH}/gradient_{i}.npy",gradients[1].on_grid[...,0])
 
     return p_rs, c_rs, mses
 
+def multi_illumination_parallel(
+    p_data, sensor_positions, angles, num_iterations=10, learning_rate=1
+):
+    domain = Domain(N, DX)
+    medium = Medium(domain=domain, sound_speed=jnp.ones(N) * u.C, pml_size=u.PML_MARGIN)
+    time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
+
+    vessels_shape = tuple(N - np.array(2 * [2 * u.PML_MARGIN]))
+
+    attenuation_masks = vmap(
+        attenuation_mask_directional_2d, in_axes=(0, None, None, None)
+    )(angles, jnp.ones(vessels_shape), DX[0], u.MU)
+    attenuation_masks = vmap(add_margin, in_axes=(0, None, None, None))(
+        attenuation_masks, N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0)
+    )
+    attenuation_masks = FourierSeries(jnp.expand_dims(attenuation_masks, -1), domain)
+
+    pml_mask = add_margin(
+        jnp.ones(vessels_shape), N, (u.PML_MARGIN, u.PML_MARGIN), (0, 0)
+    )
+    pml_mask = FourierSeries(jnp.expand_dims(pml_mask, -1), domain)
+
+    sensors_obj = BLISensors(positions=np.array(sensor_positions), n=domain.N)
+
+    # @jit
+    def simulate(medium, time_axis, p0):
+        return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
+
+    batch_compiled_simulate = vmap(simulate, in_axes=(None, None, 0))
+
+    @jit
+    def mse_loss(p0, c, attenuation_mask, p_data):
+        p0 = p0.replace_params(p0.params * attenuation_mask.params)
+        c=c.replace_params(c.params)
+        medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN)
+        p_pred = batch_compiled_simulate(medium, time_axis, p0)
+        return 0.5 * jnp.sum(jnp.abs(p_pred - p_data) ** 2)
+    
+    def update(p0, c):
+        loss, gradients = value_and_grad(mse_loss, argnums=(0, 1))(p0, c, attenuation_masks, p_data)
+        new_p0 = p0 - learning_rate * gradients[0]
+        new_c = c - 1000 * learning_rate * gradients[1]
+        mses.append(loss)
+        p_rs.append(new_p0.on_grid)
+        c_rs.append(new_c.on_grid)
+        return new_p0, new_c, gradients
+
+    # p0 = jnp.empty([u.NUM_LIGHTING_ANGLES, *N])
+    # p0 = vmap(FourierSeries, (0, None))(p0, domain)
+
+    p0 = FourierSeries(jnp.expand_dims(jnp.zeros(N), -1), domain)
+    c = FourierSeries(jnp.expand_dims(jnp.ones(N) * u.C, -1), domain)
+
+    mses = []
+    p_rs = []
+    c_rs = []
+    for i in range(num_iterations):
+        print(i)
+        p0, c, gradients = update(p0, c)
+        jnp.save(f"{u.DATA_PATH}/gradient_{i}.npy",gradients[1].on_grid[...,0])
+
+    return p_rs, c_rs, mses
 
 # _________________________________________________________________
 
 
 @jit
 def lazy_time_reversal(p_data, sensor_positions):
+    domain = Domain(N, DX)
+    sound_speed = jnp.ones(N) * u.C
+    medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=u.PML_MARGIN)
+    time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
+
+
+    def simulate(p0, sensors_obj):
+        return simulate_wave_propagation(medium, time_axis, p0=p0, sensors=sensors_obj)
+
 
     sensors_obj = BLISensors(positions=sensor_positions, n=u.N)
 

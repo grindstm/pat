@@ -2,11 +2,11 @@ file:
   data_path: data_/
 
 generate_data:
-  batch_size: 2
+  batch_size: 3
 
 geometry:
-  N: [256, 256, 256] # including margins. Use power of 2
-  shrink_factor: 1
+  N: [128, 128, 128] # including margins. Use power of 2
+  shrink_factor: 2
   dims: 2
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
   c: 1500
@@ -21,17 +21,11 @@ geometry:
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 5
+  num_lighting_angles: 10
   mu: 50 # attenuation coefficient
-
-  # azimuth_deg: 0
-  # elevation_deg: 0
-
-# simulate:
-
 
 reconstruct:
   noise_amplitude: 0.05
-  num_iterations: 10
-  learning_rate: .1
+  num_iterations: 5
+  learning_rate: .05
 

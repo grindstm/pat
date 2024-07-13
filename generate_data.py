@@ -117,7 +117,7 @@ import jax.numpy as jnp
 from jax import jit
 
 
-# @jit
+@jit
 def attenuation_mask_directional_2d(angle, volume, dx, mu):
     """
     Compute the attenuation mask for a 2D volume given an angle, voxel size, and attenuation coefficient.
