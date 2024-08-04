@@ -8,28 +8,28 @@ stages:
     - geometry
     # - simulate
     outs:
-      - data_/LNet/
-          # persist: true
-      - data_/p0/
-          # persist: true
-      - data_/sensors/
-          # persist: true
-      - data_/p_data/
-          # persist: true
+      - data_/mu/
       - data_/c/
-          # persist: true
-    always_changed: true
+      - data_/sensors/
+      - data_/P_data/
+      - data_/P_data_noisy/
+      - data_/P_0/
+      - data_/ATT_masks
+      - data_/angles/
 
   reconstruct:
     cmd: python reconstruct.py data_/
     deps:
     - reconstruct.py
     - time_reversal.py
-    - data_/p_data/
+    - data_/P_data/
     - data_/sensors/
-    - data_/p0/
+    - data_/P_0/
+    - data_/c/
+    - data_/ATT_masks
     outs:
-    - data_/p_r/
+    - data_/mu_r/
+    - data_/c_r/
         # persist: true
     params: 
       - geometry

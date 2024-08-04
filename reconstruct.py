@@ -5,45 +5,14 @@ import time
 
 import jax
 import jax.numpy as jnp
-from jax import random
 
-from jwave.signal_processing import smooth
 
 import time_reversal
 import util as u
+import generate_data as gd
 
 jax.clear_caches()
 
-
-def add_colored_noise(key, data, blackman_window_exponent=1, amplitude=0.2):
-    """
-    Add colored noise to the data
-
-    Parameters
-    ----------
-    key : PRNGKey
-        Random key
-    data : ndarray
-        Pressure data
-    blackman_window_exponent : float
-        Exponent of the Blackman window
-    amplitude : float
-        Amplitude of the noise
-
-    Returns
-    -------
-    ndarray
-
-    References
-    ----------
-    https://ucl-bug.github.io/jwave/notebooks/ivp/homogeneous_medium_backprop.html
-    """
-    noise = random.normal(key, data.shape)
-    for i in range(noise.shape[1]):
-        noise = noise.at[:, i].set(smooth(noise[:, i], blackman_window_exponent))
-    return data + amplitude * noise
-
-add_colored_noise_vmap = jax.vmap(add_colored_noise, in_axes=(0, 0, None, None))
 
 if __name__ == "__main__":
     # Signal handling
@@ -63,50 +32,35 @@ if __name__ == "__main__":
     if args.data_path is not None:
         u.DATA_PATH = args.data_path
 
-    os.makedirs(u.DATA_PATH, exist_ok=True)
-    os.makedirs(u.DATA_PATH + "p_r/", exist_ok=True)
-    os.makedirs(u.DATA_PATH + "c_r/", exist_ok=True)
-    os.makedirs(u.DATA_PATH + "p_data_noisy/", exist_ok=True)
-
     @u.timer
     def reconstruct(file):
         # print current wall time
-        print(time.time())
+        # print(time.time())
 
         file_index = file.split(".")[0]
 
-        # Set up the sensors
-        # ----------------------
-        sensor_positions = jnp.load(f"{u.DATA_PATH}sensors/{file}")
 
         # Load the data
         # ----------------------
-        p_data_file = f"{u.DATA_PATH}p_data/{file_index}.npy"
-        p_data = jnp.load(p_data_file)
-        angles_file = f"{u.DATA_PATH}angles/{file_index}.npy"
-        angles = jnp.load(angles_file)
+        sensor_positions = jnp.load(u.file(u.sensors_path, file_index))
+        P_data_noisy = jnp.load(u.file(u.P_data_noisy_path, file_index))
+        ATT_masks = jnp.load(u.file(u.ATT_masks_path, file_index))
         
+
+        # P_data_file = u.file(u.P_data_path, file_index)
+        # P_data = jnp.load(P_data_file)
+        # angles_file = u.file(u.angles_path, file_index)
+        # angles = jnp.load(angles_file)
         # p0_file = f"{u.DATA_PATH}p0/{file_index}.npy"
         # p0 = jnp.load(p0_file)
         # print(p0_file)
-
         # c_file = f"{u.DATA_PATH}c/{file_index}.npy"
         # c = jnp.load(c_file)
-
-        # Add noise to p_data
-        # ----------------------
-        key = jax.random.PRNGKey(int(time.time()))
-        keys = jax.random.split(key, u.NUM_LIGHTING_ANGLES)
-
-        p_data_noisy = add_colored_noise_vmap(keys, p_data, 1., u.NOISE_AMPLITUDE)
-
-        p_data_noisy_file = f"{u.DATA_PATH}p_data_noisy/{file_index}.npy"
-        jnp.save(p_data_noisy_file, p_data_noisy)
-        print(f"Saved {p_data_noisy_file}")
  
-        # p_data_noisy = add_colored_noise(k1, p_data, amplitude=u.NOISE_AMPLITUDE)
         # ----------------------------------------
-        p_rs, c_rs, mses = time_reversal.multi_illumination_parallel(p_data_noisy, sensor_positions, angles, num_iterations=u.NUM_ITERATIONS, learning_rate=u.LEARNING_RATE)
+        p_rs, c_rs, mses = time_reversal.multi_illumination_parallel_optimized(P_data_noisy, sensor_positions, ATT_masks, num_iterations=u.NUM_ITERATIONS, learning_rate=u.LEARNING_RATE)
+        
+        # p_rs, c_rs, mses = time_reversal.multi_illumination_parallel(p_data_noisy, sensor_positions, angles, num_iterations=u.NUM_ITERATIONS, learning_rate=u.LEARNING_RATE)
  
         # p_rs, c_rs, mses = time_reversal.multi_illumination(p_data_noisy, sensor_positions, angles, num_iterations=u.NUM_ITERATIONS, learning_rate=u.LEARNING_RATE)
         
@@ -122,24 +76,24 @@ if __name__ == "__main__":
 
         print(f"Mean squared errors: {mses}")
         
-        for i, p_r in enumerate(p_rs):
+        for i, mu_r in enumerate(p_rs):
             if exit_flag:
                 break
-            p_r_file = f"{u.DATA_PATH}p_r/{file_index}_{i}.npy"
-            jnp.save(p_r_file, p_r.squeeze())
-            print(f"Saved {p_r_file}")
+            mu_r_file = u.file(u.mu_r_path, file_index, i)
+            jnp.save(mu_r_file, mu_r.squeeze())
+            # print(f"Saved {p_r_file}")
 
-            c_r_file = f"{u.DATA_PATH}c_r/{file_index}_{i}.npy"
+            c_r_file = u.file(u.c_r_path, file_index, i)
             jnp.save(c_r_file, c_rs[i].squeeze())
-            print(f"Saved {c_r_file}")
+            # print(f"Saved {c_r_file}")
 
-    for file in os.listdir(f"{u.DATA_PATH}p0/"):
+    for file in os.listdir(u.sensors_path):
         if exit_flag:
             break
 
         print(f"Processing {file}")
         # p0 files which don't have a corresponding p_r file
-        if os.path.exists(u.DATA_PATH + f"p_r/{file.split('.')[0]}"):
+        if os.path.exists(u.file(u.mu_r_path, file.split(".")[0])):
             continue
 
         reconstruct(file)

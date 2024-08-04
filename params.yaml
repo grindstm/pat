@@ -2,18 +2,18 @@ file:
   data_path: data_/
 
 generate_data:
-  batch_size: 3
+  batch_size: 100
 
 geometry:
   N: [128, 128, 128] # including margins. Use power of 2
-  shrink_factor: 2
+  shrink_factor: 3
   dims: 2
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
   c: 1500
   cfl: 0.3
-  pml_margin: 12 # each side
-  tissue_margin: [5, 5, 5] # Added to pml_margin on each side
-  sensor_margin: [5, 5, 5] # Added to pml_margin on each side; sensor_margin[2] < tissue_margin[2] 
+  pml_margin: [12, 12, 12] # each side
+  tissue_margin: [20, 20, 20] 
+  sensor_margin: [16, 16, 16]
   num_sensors: 81 # use number with integer sqrt
 
   sound_speed_periodicity: 2
@@ -21,11 +21,13 @@ geometry:
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 10
-  mu: 50 # attenuation coefficient
+  num_lighting_angles: 20
+  attenuation: 60 # attenuation coefficient
 
 reconstruct:
-  noise_amplitude: 0.05
-  num_iterations: 5
-  learning_rate: .05
+  noise_amplitude: 10000000
+  recon_iterations: 5
+  learning_rate: 1
 
+train:
+  train_iterations: 2

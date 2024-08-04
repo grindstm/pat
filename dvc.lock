@@ -5,8 +5,8 @@ stages:
     deps:
     - path: generate_data.py
       hash: md5
-      md5: 359891c75f344bf81a93386efdf87f41
-      size: 14533
+      md5: 0f2e488c8432154b8742a9fb8d8eee35
+      size: 12201
     params:
       params.yaml:
         generate_data:
@@ -16,7 +16,7 @@ stages:
           - 128
           - 128
           - 128
-          shrink_factor: 2
+          shrink_factor: 3
           dims: 2
           dx:
           - 0.0001
@@ -24,42 +24,60 @@ stages:
           - 0.0001
           c: 1500
           cfl: 0.3
-          pml_margin: 12
+          pml_margin:
+          - 12
+          - 12
+          - 12
           tissue_margin:
-          - 5
-          - 5
-          - 5
+          - 20
+          - 20
+          - 20
           sensor_margin:
-          - 5
-          - 5
-          - 5
+          - 16
+          - 16
+          - 16
           num_sensors: 81
           sound_speed_periodicity: 2
           sound_speed_variation_amplitude: 10
     outs:
-    - path: data_/LNet/
+    - path: data_/ATT_masks
       hash: md5
-      md5: 73909ea4108e5b80055ef72ce29d8366.dir
-      size: 153984
+      md5: 0da4f7d35882f83125af4a48f44fe852.dir
+      size: 1858944
+      nfiles: 3
+    - path: data_/P_0/
+      hash: md5
+      md5: b03be77b73ef944d1898fc7d51bcbb7d.dir
+      size: 3932544
+      nfiles: 3
+    - path: data_/P_data/
+      hash: md5
+      md5: 95be7642d703c893efbac3c29ac68562.dir
+      size: 11644944
+      nfiles: 3
+    - path: data_/P_data_noisy/
+      hash: md5
+      md5: cc62e0c529afdb6025344efe72400c8c.dir
+      size: 11644944
+      nfiles: 3
+    - path: data_/angles/
+      hash: md5
+      md5: 5011c5f6b72bb2c7ab55dfa708244454.dir
+      size: 864
       nfiles: 3
     - path: data_/c/
       hash: md5
-      md5: f8e0db2231713348fb6475155ce2aeba.dir
-      size: 393600
+      md5: 8d396e5592c5a163de3139c0c39ebb8f.dir
+      size: 196992
       nfiles: 3
-    - path: data_/p0/
+    - path: data_/mu/
       hash: md5
-      md5: f123e8d59b4c0cc81f6985f2ea8c79e8.dir
-      size: 1966464
-      nfiles: 3
-    - path: data_/p_data/
-      hash: md5
-      md5: c22053fcdf8435fa9a01ccfe933422a1.dir
-      size: 5822664
+      md5: 2471d100d0bf951af921bb402c853029.dir
+      size: 2044800
       nfiles: 3
     - path: data_/sensors/
       hash: md5
-      md5: b8f9b5aecf1b260acb1a9146394daaf7.dir
+      md5: e79b28297ab79ecff962dce247b72985.dir
       size: 4272
       nfiles: 3
   simulate:
@@ -110,29 +128,39 @@ stages:
   reconstruct:
     cmd: python reconstruct.py data_/
     deps:
-    - path: data_/p0/
+    - path: data_/ATT_masks
       hash: md5
-      md5: f123e8d59b4c0cc81f6985f2ea8c79e8.dir
-      size: 1966464
+      md5: 0da4f7d35882f83125af4a48f44fe852.dir
+      size: 1858944
       nfiles: 3
-    - path: data_/p_data/
+    - path: data_/P_0/
       hash: md5
-      md5: c22053fcdf8435fa9a01ccfe933422a1.dir
-      size: 5822664
+      md5: b03be77b73ef944d1898fc7d51bcbb7d.dir
+      size: 3932544
+      nfiles: 3
+    - path: data_/P_data/
+      hash: md5
+      md5: 95be7642d703c893efbac3c29ac68562.dir
+      size: 11644944
+      nfiles: 3
+    - path: data_/c/
+      hash: md5
+      md5: 8d396e5592c5a163de3139c0c39ebb8f.dir
+      size: 196992
       nfiles: 3
     - path: data_/sensors/
       hash: md5
-      md5: b8f9b5aecf1b260acb1a9146394daaf7.dir
+      md5: e79b28297ab79ecff962dce247b72985.dir
       size: 4272
       nfiles: 3
     - path: reconstruct.py
       hash: md5
-      md5: 15aa9c7166ad9b06c26aca8e8a1fadf8
-      size: 4671
+      md5: b202f7d16e588a091366581a55c1fe08
+      size: 3375
     - path: time_reversal.py
       hash: md5
-      md5: 8a169d017e01f5e99627dfe5037a9fab
-      size: 9767
+      md5: 7071a52eddabdf994bbc801b0fd869e7
+      size: 12696
     params:
       params.yaml:
         geometry:
@@ -140,7 +168,7 @@ stages:
           - 128
           - 128
           - 128
-          shrink_factor: 2
+          shrink_factor: 3
           dims: 2
           dx:
           - 0.0001
@@ -148,24 +176,32 @@ stages:
           - 0.0001
           c: 1500
           cfl: 0.3
-          pml_margin: 12
+          pml_margin:
+          - 12
+          - 12
+          - 12
           tissue_margin:
-          - 5
-          - 5
-          - 5
+          - 20
+          - 20
+          - 20
           sensor_margin:
-          - 5
-          - 5
-          - 5
+          - 16
+          - 16
+          - 16
           num_sensors: 81
           sound_speed_periodicity: 2
           sound_speed_variation_amplitude: 10
     outs:
-    - path: data_/p_r/
+    - path: data_/c_r/
       hash: md5
-      md5: a105077cf15a260126f6491a665333a5.dir
-      size: 984960
-      nfiles: 15
+      md5: 17a24e91a663202dc191568f45a258a9.dir
+      size: 1969920
+      nfiles: 30
+    - path: data_/mu_r/
+      hash: md5
+      md5: 28f289bf5c1fcf63ad3e259ca8381c00.dir
+      size: 1969920
+      nfiles: 30
   visualize:
     cmd: python vis.py
     deps:

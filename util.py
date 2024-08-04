@@ -11,7 +11,8 @@ except ImportError:
     pass
 
 # environment variable to prevent jax preallocation
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 
 def timer(func):
     """A decorator that prints the execution time of the function it decorates."""
@@ -26,6 +27,7 @@ def timer(func):
         return value
 
     return wrapper_timer
+
 
 params = yaml.safe_load(open("params.yaml"))
 DATA_PATH = params["file"]["data_path"]
@@ -44,55 +46,75 @@ SOUND_SPEED_PERIODICITY = params["geometry"]["sound_speed_periodicity"]
 SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"]["sound_speed_variation_amplitude"]
 LIGHTING_ATTENUATION = params["lighting"]["lighting_attenuation"]
 NUM_LIGHTING_ANGLES = params["lighting"]["num_lighting_angles"]
-MU = params["lighting"]["mu"]
+ATTENUATION = params["lighting"]["attenuation"]
+TRAIN_ITERATIONS = params["train"]["train_iterations"]
 
 NOISE_AMPLITUDE = params["reconstruct"]["noise_amplitude"]
-NUM_ITERATIONS = params["reconstruct"]["num_iterations"]
+RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
 LEARNING_RATE = params["reconstruct"]["learning_rate"]
 
-# import inspect
-# def set_globals():
-# params = yaml.safe_load(open("params.yaml"))
-# Access the global namespace of the caller
-# caller_globals = inspect.stack()[1].frame.f_globals
 
-# Update the caller's global namespace with parameters
-# caller_globals['DATA_PATH'] = params['file']["data_path"]
-# caller_globals['BATCH_SIZE'] = params["generate_data"]["batch_size"]
-# caller_globals['N'] = tuple(params["geometry"]["N"])
-# caller_globals['SHRINK_FACTOR'] = params["geometry"]["shrink_factor"]
-# caller_globals['DIMS'] = params["geometry"]["dims"]
-# caller_globals['DX'] = tuple(params["geometry"]["dx"])
-# caller_globals['C'] = params["geometry"]["c"]
-# caller_globals['CFL'] = params["geometry"]["cfl"]
-# caller_globals['PML_MARGIN'] = params["geometry"]["pml_margin"]
-# caller_globals['TISSUE_MARGIN'] = params["geometry"]["tissue_margin"]
-# caller_globals['SENSOR_MARGIN'] = tuple(params["geometry"]["sensor_margin"])
-# caller_globals['NUM_SENSORS'] = params["geometry"]["num_sensors"]
-# caller_globals['SOUND_SPEED_PERIODICITY'] = params["geometry"]["sound_speed_periodicity"]
-# caller_globals['SOUND_SPEED_VARIATION_AMPLITUDE'] = params["geometry"]["sound_speed_variation_amplitude"]
-# caller_globals['LIGHTING_ATTENUATION'] = params["lighting"]["lighting_attenuation"]
-# caller_globals['NUM_LIGHTING_ANGLES']= params["lighting"]["num_lighting_angles"]
-# caller_globals['AZIMUTH_DEG'] = params["lighting"]["azimuth_deg"]
-# caller_globals['ELEVATION_DEG'] = params["lighting"]["elevation_deg"]
-# caller_globals['MU'] = params["lighting"]["mu"]
+mu_path = os.path.join(DATA_PATH, "mu")
+angles_path = os.path.join(DATA_PATH, "angles")
+ATT_masks_path = os.path.join(DATA_PATH, "ATT_masks")
+p0_path = os.path.join(DATA_PATH, "P_0")
+c_path = os.path.join(DATA_PATH, "c")
+sensors_path = os.path.join(DATA_PATH, "sensors")
+P_0_path = os.path.join(DATA_PATH, "P_0")
+P_data_path = os.path.join(DATA_PATH, "P_data")
+P_data_noisy_path = os.path.join(DATA_PATH, "P_data_noisy")
+mu_r_path = os.path.join(DATA_PATH, "mu_r")
+c_r_path = os.path.join(DATA_PATH, "c_r")
+params_R_mu_path = os.path.join(DATA_PATH, "params_R_mu")
+params_R_c_path = os.path.join(DATA_PATH, "params_R_c")
 
 
-# Parse arguments
-# def parse_args():
-#     if len(sys.argv) == 2:
-#         IN_PATH = sys.argv[1]
-#         OUT_PATH = sys.argv[1]
-#     elif len(sys.argv) == 3:
-#         IN_PATH = sys.argv[1]
-#         OUT_PATH = sys.argv[2]
-#     else:
-#         IN_PATH = "data/"
-#         OUT_PATH = "data/"
-#     return IN_PATH, OUT_PATH
-# Output directories
-# os.makedirs(OUT_PATH, exist_ok=True)
-# os.makedirs(f"{OUT_PATH}p_r/", exist_ok=True)
+
+os.makedirs(DATA_PATH, exist_ok=True)
+os.makedirs(mu_path, exist_ok=True)
+os.makedirs(angles_path, exist_ok=True)
+os.makedirs(c_path, exist_ok=True)
+os.makedirs(P_data_path, exist_ok=True)
+os.makedirs(P_data_noisy_path, exist_ok=True)
+os.makedirs(sensors_path, exist_ok=True)
+os.makedirs(P_0_path, exist_ok=True)
+os.makedirs(mu_r_path, exist_ok=True)
+os.makedirs(c_r_path, exist_ok=True)
+os.makedirs(ATT_masks_path, exist_ok=True)
+
+def file(path, index, iteration=None):
+    if iteration is not None:
+        return os.path.join(path, f"{index}_{iteration}.npy")
+    else:
+        return os.path.join(path, f"{index}.npy")
+
+
+def max_file_index(path):
+    return (
+        max(
+            [
+                int(filename.split("_")[0])
+                for filename in os.listdir(path)
+                if filename.split("_")[0].isdigit()
+            ],
+            default=-1,
+        )
+        + 1
+    )
+
+
+def max_iteration():
+    if not os.path.exists(mu_r_path):
+        return 0
+    else:
+        return max(
+            [
+                int(filename.split("_")[1].split(".")[0])
+                for filename in os.listdir(mu_r_path)
+                if filename.split("_")[1].split(".")[0].isdigit()
+            ],
+            default=0,
+        )
 
 
 # def loop(func):

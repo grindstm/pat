@@ -1,6 +1,7 @@
 import os
 import signal
 import argparse
+import time
 
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
@@ -10,10 +11,13 @@ from perlin_numpy import generate_perlin_noise_3d, generate_perlin_noise_2d
 from jwave import FourierSeries
 from jwave.geometry import Domain, Medium, TimeAxis, BLISensors
 from jwave.acoustics import simulate_wave_propagation
+from jwave.signal_processing import smooth
 
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap
+from jax import random
+
 
 # __ CPU
 from jax import device_put, devices
@@ -26,64 +30,32 @@ import util as u
 
 jax.clear_caches()
 
+# ______________________________________________________
 
-def generate_vessels_3d(N, batch_size, shrink_factor=1):
+def generate_vessels_3d(N, shrink_factor=1):
     """
-    Generate a batch of 3D vessel images.
-
-    Parameters
-    ----------
-    N : tuple
-        Size of the domain (x, y, z).
-    batch_size : int
-        Number of images to generate.
-    shrink_factor : int
-        Images are generated at a larger size, then shrunk by this factor to mitigate edge effects.
-        tissue volumes lower than about 128x128x128 benefit from a shrink factor of 2.
-
-    Returns
-    -------
-    ndarray
-        The batch of generated images.
-    int
-        The number of iterations used to generate the images.
+    Generate a 3D volume of vessels
     """
     sim = VSystemGenerator(tissue_volume=N * shrink_factor, d0_mean=20.0, d0_std=5.0)
-    vessels_batch, n_iters = sim.create_networks(batch_size)
+    mu, n_iter = sim.create_network()
+
     if shrink_factor != 1:
-        vessels_batch = [
-            scipy.ndimage.zoom(vessels_batch[i], 1 / shrink_factor)
-            for i in range(len(vessels_batch))
-        ]
-    return np.array(vessels_batch), n_iters
+        mu = scipy.ndimage.zoom(mu, 1 / shrink_factor)
+
+    return mu, n_iter
 
 
-def add_margin(image, N, margin, shift):
-    """
-    Place the image in the center of the domain, with margin and shift.
+def generate_mu_2d(mu_3d):
+    return np.sum(mu_3d, axis=0)
 
-    Parameters
-    ----------
-    image : ndarray
-        The generated image (2D or 3D).
-    N : tuple
-        Size of the domain (2D or 3D).
-    margin : ndarray
-        Margin for each side of corresponding dimension.
-    shift : ndarray
-        Shift in each dimension.
 
-    Returns
-    -------
-    ndarray
-        The image with the margin added.
-    """
-    image_out = jnp.zeros(N)
-    slices = tuple(
-        slice(m + s, dim_size - m + s) for m, s, dim_size in zip(margin, shift, N)
-    )
-    image_out = image_out.at[slices].set(image)
-    return image_out
+# ______________________________________________________
+
+
+def line_sensor(N, margin, num_sensors):
+    x = np.linspace(margin[0], N[0] - margin[0], num_sensors)
+    y = np.ones_like(x) * (N[1] - margin[1])
+    return np.array([x, y])
 
 
 def point_plane(num_points, N, margin):
@@ -113,12 +85,11 @@ def point_plane(num_points, N, margin):
     return positions
 
 
-import jax.numpy as jnp
-from jax import jit
+# ______________________________________________________
 
 
 @jit
-def attenuation_mask_directional_2d(angle, volume, dx, mu):
+def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
     """
     Compute the attenuation mask for a 2D volume given an angle, voxel size, and attenuation coefficient.
 
@@ -130,7 +101,7 @@ def attenuation_mask_directional_2d(angle, volume, dx, mu):
         The 2D volume to be attenuated.
     dx : float
         The voxel size.
-    mu : float
+    attenuation : float
         The attenuation coefficient.
 
     Returns
@@ -149,13 +120,18 @@ def attenuation_mask_directional_2d(angle, volume, dx, mu):
     X, Y = jnp.meshgrid(x_indices, y_indices, indexing="ij")
 
     distances = ux * X * dx + uy * Y * dx
-    mask = jnp.exp(-mu * distances)
+    mask = jnp.exp(-attenuation * distances)
     result = mask * volume
     return result
 
 
+attenuation_mask_directional_2d_vmap = vmap(
+    attenuation_mask_directional_2d, in_axes=(0, None, None, None)
+)
+
+
 @jit
-def attenuation_mask_directional_3d(angles, volume, dx, mu):
+def attenuation_mask_directional_3d(angles, volume, dx, attenuation):
     azimuth_deg, elevation_deg = angles[0], angles[1]
     azimuth_rad = jnp.deg2rad(azimuth_deg)
     elevation_rad = jnp.deg2rad(elevation_deg)
@@ -171,20 +147,20 @@ def attenuation_mask_directional_3d(angles, volume, dx, mu):
     X, Y, Z = jnp.meshgrid(x_indices, y_indices, z_indices, indexing="ij")
 
     distances = ux * X * dx + uy * Y * dx + uz * Z * dx
-    mask = jnp.exp(-mu * distances)
+    mask = jnp.exp(-attenuation * distances)
     result = mask * volume
     return result
 
 
-def batch_attenuate_light(volume, mu, dx, angles):
+def batch_attenuate_light(volume, attenuation, dx, angles):
     """
-    Returns a batch of images for a volume illuminated at given angles.
+    Returns a batch of images for a volume illuminated at given angles. Use this to avoid the overhead of vmap.
 
     Parameters
     ----------
     volume : ndarray
         The voxel volume of the tissue
-    mu : float
+    attenuation : float
         The attenuation coefficient
     dx : float
         The voxel size
@@ -198,60 +174,175 @@ def batch_attenuate_light(volume, mu, dx, angles):
     """
 
     partial_attenuation_mask = partial(
-        attenuation_mask_directional_3d, volume=volume, dx=dx, mu=mu
+        attenuation_mask_directional_3d, volume=volume, dx=dx, attenuation=attenuation
     )
     attenuated_volume = lax.map(partial_attenuation_mask, angles)
 
     return attenuated_volume
 
 
-# @jit
-# def generate_p0(N, angles, mu, dx, margin, shift,  dims=3):
-#     """
-#     Generate the initial pressure distribution p0 for a given tissue volume N and illumination angles.
+def add_colored_noise(key, data, blackman_window_exponent=1, amplitude=0.2):
+    """
+    Add colored noise to the data
 
-#     Parameters
-#     ----------
-#     N : tuple
-#         Size of the domain (2D or 3D).
-#     angles : array
-#         Array of illumination angles (azimuth and elevation) in degrees.
-#     mu : float
-#         The attenuation coefficient.
-#     dx : float
-#         The voxel size.
-#     margin : ndarray
-#         Margin for each side of corresponding dimension.
-#     shift : ndarray
-#         Sensor margin for each dimension.
-#     dims : int
-#         Number of dimensions (2 or 3).
+    Parameters
+    ----------
+    key : PRNGKey
+        Random key
+    data : ndarray
+        Pressure data
+    blackman_window_exponent : float
+        Exponent of the Blackman window
+    amplitude : float
+        Amplitude of the noise
 
-#     Returns
-#     -------
-#     ndarray
-#         The initial pressure distribution p0 with margins added.
-#     """
-#     # Illuminate vessels with given angles
-#     attenuated_volume = attenuation_mask_directional_3d(angles, N-margin, dx, mu)
+    Returns
+    -------
+    ndarray
 
-#     # Add margin for the PML
-#         p0 = add_margin(
-#                 attenuated_volume,
-#                 N,
-#                 margin // 2,
-#                 shift=(0, 0, -1 * shift[2]),
-#             )
-
-#     if dims == 2:
-#         # flatten the images
-#         p0 = jnp.sum(jnp.array(p0), axis=1)
+    References
+    ----------
+    https://ucl-bug.github.io/jwave/notebooks/ivp/homogeneous_medium_backprop.html
+    """
+    noise = random.normal(key, data.shape)
+    for i in range(noise.shape[1]):
+        noise = noise.at[:, i].set(smooth(noise[:, i], blackman_window_exponent))
+    return data + amplitude * noise
 
 
-#     return p0
+add_colored_noise_vmap = jax.vmap(add_colored_noise, in_axes=(0, 0, None, None))
+
+pad_0_wrapper = partial(jnp.pad, mode="constant", constant_values=0)
+pad_1_wrapper = partial(jnp.pad, mode="constant", constant_values=1)
+
+
+def generate_2d_data(mu):
+    N = u.N[:2]
+    DX = u.DX[:2]
+    TISSUE_MARGIN = u.TISSUE_MARGIN[:2]
+
+    mu = generate_mu_2d(mu)
+
+    # Illumination
+    # ----------------------
+    angles = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
+    jnp.save(u.file(u.angles_path, i), angles)
+
+    ATT_masks = attenuation_mask_directional_2d_vmap(
+        angles, jnp.ones_like(mu), DX[0], u.ATTENUATION
+    )
+    MU_att = ATT_masks * mu
+
+    # Add margin to mu
+    # ----------------------
+    P_0 = vmap(pad_0_wrapper, in_axes=(0, None))(
+        MU_att,
+        TISSUE_MARGIN,
+    )
+
+    # Sound speed
+    # ----------------------
+    if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
+        c = u.C * jnp.ones(N)
+    else:
+        noise = generate_perlin_noise_2d(
+            N,
+            [u.SOUND_SPEED_PERIODICITY] * 2,
+            tileable=(False, False),
+        )
+        c = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
+
+    # ----------------------
+
+    # ----------------------
+    # Perform simulation
+    # ----------------------
+    print(f"Simulating")
+    c = FourierSeries(jnp.expand_dims(c, -1), domain)
+    medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN[0])
+    # print(time_axis.dt, time_axis.Nt)
+    P_0 = vmap(FourierSeries, (0, None))(P_0, domain)
+
+    P_data = batch_compiled_simulator(medium, time_axis, P_0)
+
+    return P_0, ATT_masks, c, P_data
+
+    # ----------------------
+
+
+def generate_3d_data(mu):
+    # Illumination
+    # ----------------------
+    azimuth_degs = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
+    elevation_degs = np.random.uniform(0, 180, u.NUM_LIGHTING_ANGLES)
+    angles = jnp.stack([azimuth_degs, elevation_degs], axis=1)
+
+    ATT_masks = batch_attenuate_light(jnp.ones_like(mu), u.ATTENUATION, DX[0], angles)
+    MU_att = ATT_masks * mu
+
+    # Add margin to the vessels
+    # ----------------------
+    P_0 = vmap(pad_0_wrapper, in_axes=(0, None, None, None))(
+        MU_att,
+        TISSUE_MARGIN,
+    )
+
+    # p0 = []
+    # for i in range(MU_att.shape[0]):
+    #     p0.append(
+    #         device_put(
+    #             add_margin(
+    #                 MU_att[i],
+    #                 N,
+    #                 tissue_margin // 2,
+    #                 shift=(0, 0, u.SENSOR_MARGIN[2]),
+    #             ),
+    #             devices("cpu")[0],
+    #         )
+    #     )
+
+    # Sound speed
+    # ----------------------
+    if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
+        c = u.C * jnp.ones(N)
+    else:
+        noise = generate_perlin_noise_3d(
+            N,
+            [u.SOUND_SPEED_PERIODICITY] * 3,
+            tileable=(False, False, False),
+        )
+        c = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
+
+    # p0 = device_put(p0, devices("cuda")[0])
+
+    # ----------------------
+
+    # ----------------------
+    # Perform simulation
+    # ----------------------
+    print(f"Simulating")
+    # print(sound_speed.shape, sound_speed.max(), sound_speed.min())
+    c = FourierSeries(jnp.expand_dims(c, -1), domain)
+
+    medium = Medium(domain=domain, sound_speed=c, pml_size=u.PML_MARGIN[0])
+    # print(time_axis.dt, time_axis.Nt)
+    P_0 = vmap(FourierSeries, (0, None))(P_0, domain)
+
+    P_data = batch_compiled_simulator(medium, time_axis, P_0)
+
+    return P_0, ATT_masks, c, P_data
+
+
+# ----------------------
 
 
 if __name__ == "__main__":
+    N = u.N
+    DX = u.DX
+    SENSOR_MARGIN = u.SENSOR_MARGIN
+    PML_MARGIN = u.PML_MARGIN
+    TISSUE_MARGIN = u.TISSUE_MARGIN
+
     # Signal handling
     def signal_handler(signum, frame):
         global exit_flag
@@ -269,74 +360,32 @@ if __name__ == "__main__":
     if args.data_path is not None:
         u.DATA_PATH = args.data_path
 
-    os.makedirs(u.DATA_PATH, exist_ok=True)
-
-    # ----------------------
-    # Generate vessels
-    # ----------------------
-    print("Generating vessels")
-
-    tissue_margin = 2 * (np.array([u.PML_MARGIN] * 3) + np.array([u.PML_MARGIN] * 3))
-    tissue_volume = np.array(u.N) - tissue_margin
-    print(f"Tissue volume: {tissue_volume}")
-
-    vessels_batch, n_iters = generate_vessels_3d(
-        tissue_volume, u.BATCH_SIZE, shrink_factor=u.SHRINK_FACTOR
-    )
-
-    if u.DIMS == 2:
-        vessels_batch = np.sum(vessels_batch, axis=1)
-
-    # Save vessels
-    # ----------------------
-    os.makedirs(f"{u.DATA_PATH}LNet/", exist_ok=True)
-    folder_index = (
-        max(
-            [
-                int(filename.split("_")[0])
-                for filename in os.listdir(f"{u.DATA_PATH}LNet/")
-                if filename.split("_")[0].isdigit()
-            ],
-            default=-1,
-        )
-        + 1
-    )
-
-    for i, vessels in enumerate(vessels_batch):
-        filename = f"{i+folder_index}_{n_iters[i]}"
-
-        lnet_file = f"{u.DATA_PATH}LNet/{filename}.npy"
-        np.save(lnet_file, vessels)
-        print(f"Created vessels image {lnet_file}")
-
     # ----------------------
     # ----------------------
     # Simulation setup
     # ----------------------
     if u.DIMS == 2:
-        N = tuple(u.N[:2])
-        DX = tuple(u.DX[:2])
+        domain = Domain(N[:2], DX[:2])
+
+        # Set up the sensors
+        sensor_positions = line_sensor(N[:2], u.SENSOR_MARGIN[:2], u.NUM_SENSORS)
+        sensors_obj = BLISensors(sensor_positions, domain.N)
+
+        medium = Medium(
+            domain=domain, sound_speed=jnp.ones(N[:2]) * u.C, pml_size=u.PML_MARGIN[0]
+        )
+        time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
+
+    elif u.DIMS == 3:
         domain = Domain(N, DX)
 
         # Set up the sensors
-        x_start = u.SENSOR_MARGIN[1] + u.PML_MARGIN
-        x_end = u.N[1] - u.SENSOR_MARGIN[1] - u.PML_MARGIN
-        x = np.linspace(x_start, x_end, u.NUM_SENSORS)
-        y = np.ones_like(x) * (u.SENSOR_MARGIN[0] + u.PML_MARGIN)
-        sensor_positions = np.array([x, y])
+        sensor_positions = point_plane(N, u.SENSOR_MARGIN, u.NUM_SENSORS)
         sensors_obj = BLISensors(sensor_positions, domain.N)
-
-        attenuation_mask_directional_2d_vmap = vmap(
-            attenuation_mask_directional_2d, in_axes=(0, None, None, None)
+        medium = Medium(
+            domain=domain, sound_speed=jnp.ones(N) * u.C, pml_size=u.PML_MARGIN[0]
         )
-
-    elif u.DIMS == 3:
-        domain = Domain(u.N, u.DX)
-
-        # Set up the sensors
-        margin = np.array(u.SENSOR_MARGIN) + np.array([u.PML_MARGIN] * 3)
-        sensor_positions = point_plane(u.NUM_SENSORS, u.N, margin)
-        sensors_obj = BLISensors(sensor_positions, u.N)
+        time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
 
     @u.timer
     @jit
@@ -345,134 +394,42 @@ if __name__ == "__main__":
 
     batch_compiled_simulator = vmap(compiled_simulator, in_axes=(None, None, 0))
 
-    os.makedirs(f"{u.DATA_PATH}angles/", exist_ok=True)
-    os.makedirs(f"{u.DATA_PATH}sensors/", exist_ok=True)
-    os.makedirs(f"{u.DATA_PATH}p0/", exist_ok=True)
-    os.makedirs(f"{u.DATA_PATH}p_data/", exist_ok=True)
-    os.makedirs(f"{u.DATA_PATH}c/", exist_ok=True)
-
-    # Loop through the LNet files which don't have a corresponding p0 file
     # ----------------------
-    for file in os.listdir(f"{u.DATA_PATH}LNet/"):
+    for i in range(u.BATCH_SIZE):
         if exit_flag:
             break
 
-        if os.path.exists(u.DATA_PATH + f"p0/{file.split('_')[0]}*"):
-            continue
-        file_index = file.split("_")[0]
-
-        vessels = jnp.load(f"{u.DATA_PATH}LNet/{file}")
+        # ----------------------
+        # Generate mu
+        # ----------------------
+        print("Generating mu")
+        tissue_volume = np.array(N) - 2 * np.array(u.TISSUE_MARGIN)
+        print(f"Tissue volume: {tissue_volume}")
+        mu, n_iter = generate_vessels_3d(tissue_volume, u.SHRINK_FACTOR)
 
         if u.DIMS == 2:
-            # Illumination
-            # ----------------------
-            angles = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
-            attenuated_vessels = attenuation_mask_directional_2d_vmap(
-                angles, vessels, DX[0], u.MU
-            )
-
-            # Add margin to the vessels
-            # ----------------------
-            p0 = vmap(add_margin, in_axes=(0, None, None, None))(
-                attenuated_vessels,
-                N,
-                tissue_margin // 2,
-                (0, -1 * u.SENSOR_MARGIN[1]),
-            )
-
-            # Sound speed
-            # ----------------------
-            if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
-                sound_speed = u.C * jnp.ones(N)
-            else:
-                # sound_speed_area = np.array(N) - np.array(u.PML_MARGIN)
-                noise = generate_perlin_noise_2d(
-                    N,
-                    # sound_speed_area,
-                    [u.SOUND_SPEED_PERIODICITY] * 2,
-                    tileable=(False, False),
-                )
-                sound_speed = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
+            P_0, ATT_masks, c, P_data = generate_2d_data(mu)
+            jnp.save(u.file(u.mu_path, i), mu)
 
         elif u.DIMS == 3:
-            # Illumination
-            # ----------------------
-            azimuth_degs = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
-            elevation_degs = np.random.uniform(0, 180, u.NUM_LIGHTING_ANGLES)
-            angles = jnp.stack([azimuth_degs, elevation_degs], axis=1)
-
-            attenuated_vessels = batch_attenuate_light(vessels, u.MU, u.DX[0], angles)
-
-            # Add margin to the vessels
-            # ----------------------
-            p0 = []
-            for i in range(attenuated_vessels.shape[0]):
-                p0.append(
-                    device_put(
-                        add_margin(
-                            attenuated_vessels[i],
-                            u.N,
-                            tissue_margin // 2,
-                            shift=(0, 0, -1 * u.SENSOR_MARGIN[2]),
-                        ),
-                        devices("cpu")[0],
-                    )
-                )
-            # Sound speed
-            # ----------------------
-            if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
-                sound_speed = u.C * jnp.ones(u.N)
-            else:
-                # sound_speed_volume = np.array(N) - np.array(u.PML_MARGIN)
-                noise = generate_perlin_noise_3d(
-                    u.N,
-                    # sound_speed_volume,
-                    [u.SOUND_SPEED_PERIODICITY] * 3,
-                    tileable=(False, False, False),
-                )
-                sound_speed = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
-
-            p0 = device_put(p0, devices("cuda")[0])
-
-        # Save the illumination angles
-        # ----------------------
-        angles_file = f"{u.DATA_PATH}angles/{file_index}.npy"
-        jnp.save(angles_file, angles)
-
-        # Save p0
-        # ----------------------
-        p0_file = f"{u.DATA_PATH}p0/{file_index}.npy"
-        jnp.save(p0_file, p0)
-
-        # Save sound speed
-        # ----------------------
-        c_file = f"{u.DATA_PATH}c/{file_index}.npy"
-        jnp.save(c_file, sound_speed)
+            P_0, ATT_masks, c, P_data = generate_3d_data(mu)
 
         # ----------------------
-
+        # Add noise to the data
         # ----------------------
-        # Perform simulation
-        # ----------------------
-        print(f"Simulating {file}")
-        # print(sound_speed.shape, sound_speed.max(), sound_speed.min())
-        sound_speed = FourierSeries(jnp.expand_dims(sound_speed, -1), domain)
-        medium = Medium(domain=domain, sound_speed=jnp.ones(N) * u.C, pml_size=u.PML_MARGIN)
-        time_axis = TimeAxis.from_medium(medium, cfl=u.CFL)
-        medium = Medium(domain=domain, sound_speed=sound_speed, pml_size=u.PML_MARGIN)
-        # print(time_axis.dt, time_axis.Nt)
-        p0 = vmap(FourierSeries, (0, None))(p0, domain)
-
-        p_data = batch_compiled_simulator(medium, time_axis, p0)
-
-        # ----------------------
+        key = random.PRNGKey(int(time.time()))
+        keys = random.split(key, u.NUM_LIGHTING_ANGLES)
+        P_data_noisy = add_colored_noise_vmap(keys, P_data, 1.0, u.NOISE_AMPLITUDE)
 
         # ----------------------
         # Save the data
-        # # ----------------------
-        sensors_file = f"{u.DATA_PATH}sensors/{file_index}.npy"
-        jnp.save(sensors_file, sensor_positions)
-        p_data_file = f"{u.DATA_PATH}p_data/{file_index}.npy"
-        jnp.save(p_data_file, p_data)
+        # ----------------------
+        jnp.save(u.file(u.P_0_path, i), P_0.on_grid.squeeze())
+        jnp.save(u.file(u.ATT_masks_path, i), ATT_masks)
+        jnp.save(u.file(u.mu_path, i), mu)
+        jnp.save(u.file(u.c_path, i), c.on_grid.squeeze())
+        jnp.save(u.file(u.sensors_path, i), sensor_positions)
+        jnp.save(u.file(u.P_data_path, i), P_data.squeeze())
+        jnp.save(u.file(u.P_data_noisy_path, i), P_data_noisy.squeeze())
 
-        print(f"Saved {p0_file}, {p_data_file}, {sensors_file}, {c_file}")
+        print(f"Saved {i}")

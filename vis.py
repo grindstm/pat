@@ -4,7 +4,7 @@ import numpy as np
 import vedo
 from vedo import Plotter, Volume, Text2D, Points, Slider2D, color_map
 import glob
-import util
+import util as u
 import argparse
 
 vedo.settings.default_backend = "vtk"
@@ -76,14 +76,14 @@ class VolumeVisualizer:
 
         # Load sound speed volume
         c_file = os.path.join(self.data_path, "c", f"{self.file_index}.npy")
-        lower = C - SOUND_SPEED_VARIATION_AMPLITUDE / 2
-        upper = C + SOUND_SPEED_VARIATION_AMPLITUDE / 2
+        lower = u.C - u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
+        upper = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
         c_vol = self.load_volume(c_file)
         
         # vrange = c_vol.scalar_range()
         colors = [
             (lower - 1, [0.0, 1.0, 0.0]),
-            (C, [1.0, 1.0, 1.0]),
+            (u.C, [1.0, 1.0, 1.0]),
             (upper + 1, [1.0, 0.0, 1.0]),
         ]
         alpha = [0.01, 0.0,0.01]
@@ -148,13 +148,13 @@ class VolumeVisualizer:
             item = Volume(p_r_data)
         elif item.name == "c":
             c_data = self.c_vol_original.tonumpy()
-            c_data[c_data < widget.value] = C
+            c_data[c_data < widget.value] = u.C
             c_vol = Volume(c_data)
-            lower = C - SOUND_SPEED_VARIATION_AMPLITUDE / 2
-            upper = C + SOUND_SPEED_VARIATION_AMPLITUDE / 2
+            lower = u.C - u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
+            upper = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
             colors = [
             (lower - 1, [0.0, 1.0, 0.0]),
-            (C, [1.0, 1.0, 1.0]),
+            (u.C, [1.0, 1.0, 1.0]),
             (upper + 1, [1.0, 0.0, 1.0]),
             ]
             alpha = [0.01, 0.0,0.01]
@@ -199,11 +199,13 @@ class VolumeVisualizer:
 
 
 if __name__ == "__main__":
-    util.set_globals()
     parser = argparse.ArgumentParser()
-    parser.add_argument("data_path", type=str, default=None, help="data path", nargs='?')
+    parser.add_argument(
+        "data_path", type=str, default=None, help="data path", nargs="?"
+    )
     args = parser.parse_args()
     if args.data_path is not None:
-        DATA_PATH = args.data_path
-    visualizer = VolumeVisualizer(DATA_PATH)
+        u.DATA_PATH = args.data_path
+
+    visualizer = VolumeVisualizer(u.DATA_PATH)
     visualizer.show()
