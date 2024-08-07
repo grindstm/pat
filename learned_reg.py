@@ -1,19 +1,59 @@
 import os
+import signal
+from collections import defaultdict
 import argparse
+from functools import partial
 import numpy as np
 import jax
 from jax import random
 from jax import vmap, jit, value_and_grad
 import jax.numpy as jnp
 from flax import linen as nn
-from flax import serialization
+
+# from flax import serialization
+from flax.training import train_state
+import optax
+import orbax.checkpoint as ocp
 from jwave.geometry import Domain, Medium, BLISensors, TimeAxis
 from jwave import simulate_wave_propagation
 from jaxdf import FourierSeries
-import optax
-import util as u
 from tqdm import tqdm
+import util as u
 from PADataset import PADataset
+
+jax.clear_caches()
+
+
+def signal_handler(signum, frame):
+    global exit_flag
+    exit_flag = True
+    print("Exit signal received, finishing current task...")
+
+
+def save_recon(j, state):
+    for i in range(u.RECON_ITERATIONS):
+        mu_r_file = u.file(u.mu_r_path, j, i)
+        jnp.save(mu_r_file, state[j]["mu_rs"][i].squeeze())
+        c_r_file = u.file(u.c_r_path, j, i)
+        jnp.save(c_r_file, state[j]["c_rs"][i].squeeze())
+
+
+def print_losses(j, state):
+    for i in range(u.RECON_ITERATIONS):
+        print(
+            f"{state['state_R_mu'].loss[j*u.RECON_ITERATIONS + i]:.4f}\t\t{state['state_R_c'].loss[j*u.RECON_ITERATIONS + i]:.4f}\t\t{state[j]['loss_P_datas'][i]:.6f}"
+        )
+
+
+def print_recon_losses(j, state):
+    for i in range(u.RECON_ITERATIONS):
+        print(f"Training on {j} \nIter\tLoss_mu\t\tLoss_c\t\tLoss_data")
+        print(
+            f"{state[j]['loss_mu'][i]:.4f}\t\t{state[j]['loss_c'][i]:.4f}\t\t{state[j]['loss_P_datas'][i]:.6f}"
+        )
+
+
+# --------------------------------------------
 
 
 class EncoderBlock(nn.Module):
@@ -67,18 +107,22 @@ class RegularizerCNN(nn.Module):
         output = nn.Conv(features=1, kernel_size=(1, 1))(d2)
         return output
 
-def save_params(params, filepath):
-    bytes_output = serialization.to_bytes(params)
-    with open(filepath, 'wb') as f:
-        f.write(bytes_output)
+
+class TrainState(train_state.TrainState):
+    loss: jnp.ndarray
 
 
-def load_params(filepath, model, mu_example, res_example):
-    with open(filepath, 'rb') as f:
-        bytes_input = f.read()
-    params = model.init(random.PRNGKey(0), mu_example, res_example)['params']
-    return serialization.from_bytes(params, bytes_input)
-# --------------------------------------------
+R_mu = RegularizerCNN()
+R_c = RegularizerCNN()
+# print(
+#     R_mu.tabulate(
+#         jax.random.key(0),
+#         jnp.ones((1, *N, 1)),
+#         jnp.ones((1, *N, 1)),
+#         compute_flops=True,
+#         compute_vjp_flops=True,
+#     )
+# )
 
 
 if u.DIMS == 2:
@@ -116,173 +160,253 @@ def ATr(
     P_pred, AT = jax.vjp(A, mu_r, ATT_masks, c_r)
     residual = P_pred - jnp.expand_dims(P_data, -1)
     d_mu, d_ATT_masks, d_c = AT(residual)
+    d_mu = jnp.expand_dims(d_mu, 0)
+    d_c = jnp.expand_dims(d_c, 0)
     return P_pred, d_mu, d_ATT_masks, d_c
 
 
-R_mu = RegularizerCNN()
-R_c = RegularizerCNN()
-# print(
-#     R_mu.tabulate(
-#         jax.random.key(0),
-#         jnp.ones((1, *N, 1)),
-#         jnp.ones((1, *N, 1)),
-#         compute_flops=True,
-#         compute_vjp_flops=True,
-#     )
-# )
+def step(params, model, x, dx):
+    return x - (dx + model.apply(params, x, dx))
 
 
-def recon_step(
-    mu_r,
-    ATT_masks,
-    c_r,
-    P_data,
-    params_R_mu,
-    params_R_c,
-):
-    """
-    One iteration of the reconstruction
-    """
-    mu_r = FourierSeries(mu_r, domain)  # should this be moved?
-    c_r = FourierSeries(c_r, domain)
-
-    P_pred, d_mu, d_ATT_masks, d_c = ATr(mu_r, ATT_masks, c_r, P_data)
-
-    d_mu = jnp.expand_dims(d_mu.on_grid, 0)
-    d_c = jnp.expand_dims(d_c.on_grid, 0)
-    mu_r = jnp.expand_dims(mu_r.on_grid, 0)
-    c_r = jnp.expand_dims(c_r.on_grid, 0)
-
-    mu_r = mu_r - (d_mu + R_mu.apply(params_R_mu, mu_r, d_mu))
-    c_r = c_r - (d_c + R_c.apply(params_R_c, c_r, d_c))
-    return mu_r, c_r
-
-
-@jit
-def R_mu_loss(params_R_mu, mu_r, d_mu, mu):
-    mu_r = mu_r - (d_mu + R_mu.apply(params_R_mu, mu_r, d_mu))
-    return jnp.mean(jnp.square(mu_r - mu)) / 2.0
-
-
-@jit
-def R_c_loss(params_R_c, c_r, d_c, c):
-    c_r = c_r - (d_c + R_c.apply(params_R_c, c_r, d_c))
-    return jnp.mean(jnp.square(c_r - c)) / 2.0
+# --------------------------------------------
 
 
 def train_R(cont=False):
-    """ """
-    dataset = PADataset()
-    train_data = [dataset[i] for i in range(len(dataset) // 3 * 2)]
+    # train states
+    exit_flag = False
+    signal.signal(signal.SIGINT, signal_handler)
 
-    key1, key2 = random.split(random.key(0))
-    params_R_mu = R_mu.init(
-        key2, random.normal(key1, (1, *N, 1)), random.normal(key1, (1, *N, 1))
-    )
-    params_R_c = R_c.init(
-        key2, random.normal(key1, (1, *N, 1)), random.normal(key1, (1, *N, 1))
-    )
-    if cont and os.path.exists(u.params_R_mu_path) and os.path.exists(u.params_R_c_path):
-        params_R_mu = load_params(u.params_R_mu_path, R_mu, jnp.ones((1, *N, 1)), jnp.ones((1, *N, 1)))
-        params_R_c = load_params(u.params_R_c_path, R_c, jnp.ones((1, *N, 1)), jnp.ones((1, *N, 1)))
+    def create_train_state(key, model, learning_rate):
+        params = model.init(
+            key,
+            random.normal(key, (1, *N, 1)),
+            random.normal(key, (1, *N, 1)),
+        )
+        tx = optax.adam(learning_rate)
+        return TrainState.create(apply_fn=model.apply, params=params, tx=tx, loss=0)
 
-    # Optimizers
-    lr_R_mu = 1e-3
-    opt_R_mu = optax.adam(lr_R_mu)
-    opt_R_mu_state = opt_R_mu.init(params_R_mu)
+    # --------------------------------------------
+    def loss(params, model, x, dx, x_true):
+        x = step(params, model, x, dx)
+        return jnp.mean(jnp.square(x - x_true)) / 2.0
 
-    lr_R_c = 1e-3
-    opt_R_c = optax.adam(lr_R_c)
-    opt_R_c_state = opt_R_c.init(params_R_c)
-
-    for j, data in enumerate(train_data):
-        print(f"Training on {j} \nIter\tLoss_mu\t\tLoss_c\t\tLoss_data")
-
+    @partial(jit, static_argnums=(0))
+    def train_step(j, data, state):
         mu = data["mu"]
         ATT_masks = data["ATT_masks"]
         ATT_masks = FourierSeries(jnp.expand_dims(ATT_masks, -1), domain)
         c = data["c"]
         P_data = data["P_data"]
-
-        # Reconstruction optimizers
-        lr_mu_r = 0.3
-        opt_mu_r = optax.adam(lr_mu_r)
-        opt_mu_r_state = opt_mu_r.init(jnp.zeros_like(mu))
-
-        lr_c_r = 0.3
-        opt_c_r = optax.adam(lr_c_r)
-        opt_c_r_state = opt_c_r.init(jnp.ones_like(c) * u.C)
+        state_R_mu = state["state_R_mu"]
+        state_R_c = state["state_R_c"]
 
         # Initial reconstruction
-        key1, key2 = random.split(random.key(0))
-        mu_r_0 = jnp.expand_dims(jnp.zeros_like(mu, dtype=jnp.float32), -1)
-        c_r_0 = jnp.expand_dims(jnp.ones_like(c) * u.C, -1)
-        mu_r, c_r = recon_step(
-            mu_r_0, ATT_masks, c_r_0, P_data, params_R_mu, params_R_c
-        )
+        mu_r_0 = jnp.zeros((1, *N, 1))
+        c_r_0 = jnp.ones((1, *N, 1)) * u.C
+
+        loss_P_datas = []
+        P_pred, d_mu, d_ATT_masks, d_c = ATr(mu_r_0[0], ATT_masks, c_r_0[0], P_data)
+        loss_P_datas.append(jnp.mean(jnp.square(P_pred.squeeze() - P_data)) / 2.0)
+        mu_r = step(state_R_mu.params, R_mu, mu_r_0, d_mu)
+        c_r = step(state_R_c.params, R_c, c_r_0, d_c)
 
         mu_rs = [mu_r]
         c_rs = [c_r]
         for i in range(u.RECON_ITERATIONS):
             P_pred, d_mu, d_ATT_masks, d_c = ATr(mu_r[0], ATT_masks, c_r[0], P_data)
+            loss_P_datas.append(jnp.mean(jnp.square(P_pred.squeeze() - P_data)) / 2.0)
 
-            # update mu_r and c_r
-            mu_r_updates, opt_mu_r_state = opt_mu_r.update(d_mu.squeeze(), opt_mu_r_state)
-            mu_r = optax.apply_updates(mu_r, mu_r_updates.reshape(1, *N, 1))
-            mu_rs.append(mu_r)
-
-            c_r_updates, opt_c_r_state = opt_c_r.update(d_c.squeeze(), opt_c_r_state)
-            c_r = optax.apply_updates(c_r, c_r_updates.reshape(1, *N, 1))
-            c_rs.append(c_r)
-
-            d_mu = jnp.reshape(d_mu, (1, *N, 1))
-            d_c = jnp.reshape(d_c, (1, *N, 1))
-
-            loss_R_mu, d_R_mu = value_and_grad(R_mu_loss, argnums=0)(
-                params_R_mu, mu_r, d_mu, mu
-            )
-            loss_R_c, d_R_c = value_and_grad(R_c_loss, argnums=0)(
-                params_R_c, c_r, d_c, c
+            loss_R_mu, d_R_mu = value_and_grad(loss, argnums=0)(
+                state_R_mu.params, R_mu, mu_r, d_mu, mu
             )
 
-            print(
-                f"{i}\t{loss_R_mu:.4f}\t\t{loss_R_c:.4f}\t\t{jnp.mean(jnp.square(P_pred.squeeze() - P_data)):.6f}"
+            loss_R_c, d_R_c = value_and_grad(loss, argnums=0)(
+                state_R_c.params, R_c, c_r, d_c, c
             )
 
             # update reg params
-            params_R_mu_updates, opt_R_mu_state = opt_R_mu.update(
-                d_R_mu, opt_R_mu_state
-            )
-            params_R_mu = optax.apply_updates(params_R_mu, params_R_mu_updates)
-            params_R_c_updates, opt_R_c_state = opt_R_c.update(d_R_c, opt_R_c_state)
-            params_R_c = optax.apply_updates(params_R_c, params_R_c_updates)
+            state_R_mu = state_R_mu.apply_gradients(grads=d_R_mu)
+            state_R_c = state_R_c.apply_gradients(grads=d_R_c)
 
-            # save mu_r and c_r
-            mu_r_file = u.file(u.mu_r_path, j, i)
-            jnp.save(mu_r_file, mu_r.squeeze())
+            state_R_mu = state_R_mu.replace(loss=jnp.append(state_R_mu.loss, loss_R_mu))
+            state_R_c = state_R_c.replace(loss=jnp.append(state_R_c.loss, loss_R_c))
 
-            c_r_file = u.file(u.c_r_path, j, i)
-            jnp.save(c_r_file, c_r.squeeze())
+            # reconstruction step
+            mu_r = step(state_R_mu.params, R_mu, mu_r, d_mu)
+            mu_rs.append(mu_r)
 
-    # save reg params
-    save_params(params_R_mu, u.params_R_mu_path)
-    save_params(params_R_c, u.params_R_c_path)
-    # bytes_output = serialization.to_bytes(params_R_mu)
-    # with open(u.params_R_mu_path, "wb") as f:
-    #     f.write(bytes_output)
-    # bytes_output = serialization.to_bytes(params_R_c)
-    # with open(u.params_R_c_path, "wb") as f:
-    #     f.write(bytes_output)
+            c_r = step(state_R_c.params, R_c, c_r, d_c)
+            c_rs.append(c_r)
+
+        state["state_R_mu"] = state_R_mu
+        state["state_R_c"] = state_R_c
+        state[j] = {
+            "mu_rs": mu_rs,
+            "c_rs": c_rs,
+            "loss_P_datas": loss_P_datas,
+        }
+        return state
+
+    dataset = PADataset()
+    train_data = [dataset[i] for i in range(len(dataset) // 3 * 2)]
+
+    # --------------------------------------------
+
+    # checkpoints
+    options = ocp.CheckpointManagerOptions(max_to_keep=3)
+    with ocp.CheckpointManager(
+        os.path.abspath(os.path.join(u.DATA_PATH, "checkpoints")),
+        options=options,
+    ) as mngr:
+        latest_step = mngr.latest_step()
+        if latest_step is not None and cont:
+            state_R_mu = mngr.restore(latest_step, items=state["state_R_mu"])
+            state_R_c = mngr.restore(latest_step, items=state["state_R_c"])
+        else:
+            key = jax.random.PRNGKey(0)
+            key1, key2 = jax.random.split(key)
+            state_R_mu = create_train_state(key1, R_mu, u.LR_R_MU)
+            state_R_c = create_train_state(key2, R_c, u.LR_R_C)
+
+    # --------------------------------------------
+
+    state = defaultdict(dict)
+    state["state_R_mu"] = state_R_mu
+    state["state_R_c"] = state_R_c
+
+    for j, data in enumerate(train_data):
+        if exit_flag:
+            break
+
+        state = train_step(j, data, state)
+
+        save_recon(j, state)
+
+        print_losses(j, state)
+
+        with ocp.CheckpointManager(
+            os.path.abspath(os.path.join(u.DATA_PATH, "checkpoints")),
+            options=options,
+        ) as mngr:
+            mngr.save(j, args=ocp.args.StandardSave(state["state_R_mu"]))
+            mngr.save(j, args=ocp.args.StandardSave(state["state_R_c"]))
+            mngr.wait_until_finished()
+
+
+# --------------------------------------------
+
+
+def reconstruct_no_reg(j=0):
+    def mse(x, x_true):
+        return jnp.mean(jnp.square(x - x_true)) / 2.0
+
+    state = defaultdict(dict)
+    state[j] = {
+        "loss_mu": [],
+        "loss_c": [],
+        "loss_P_datas": [],
+        "mu_rs": [],
+        "c_rs": [],
+    }
+
+    dataset = PADataset()
+    data = dataset[j]
+    mu = data["mu"]
+    ATT_masks = data["ATT_masks"]
+    ATT_masks = FourierSeries(jnp.expand_dims(ATT_masks, -1), domain)
+    c = data["c"]
+    P_data = data["P_data"]
+
+    # Initial reconstruction
+    mu_r = jnp.zeros((1, *N, 1))
+    c_r = jnp.ones((1, *N, 1)) * u.C
+
+    P_pred, d_mu, d_ATT_masks, d_c = ATr(mu_r[0], ATT_masks, c_r[0], P_data)
+
+    state[j]["loss_P_datas"] = [mse(P_pred.squeeze(), P_data)]
+
+    def step(x, dx, lr):
+        return x - lr * dx
+
+    for i in range(u.RECON_ITERATIONS):
+        P_pred, d_mu, d_ATT_masks, d_c = ATr(mu_r[0], ATT_masks, c_r[0], P_data)
+        state[j]["loss_P_datas"].append(
+            jnp.mean(jnp.square(P_pred.squeeze() - P_data)) / 2.0
+        )
+        mu_r = step(mu_r, d_mu, u.LR_MU_R)
+        c_r = step(c_r, d_c, u.LR_C_R)
+
+        state[j]["mu_rs"].append(mu_r)
+        state[j]["c_rs"].append(c_r)
+        state[j]["loss_mu"].append(mse(mu_r.squeeze(), mu))
+        state[j]["loss_c"].append(mse(c_r.squeeze(), c))
+
+    print_recon_losses(j, state)
+    save_recon(j, state)
+
+
+def reconstruct_no_reg_opt(j=0):
+    dataset = PADataset()
+    data = dataset[j]
+    mu = data["mu"]
+    ATT_masks = data["ATT_masks"]
+    ATT_masks = FourierSeries(jnp.expand_dims(ATT_masks, -1), domain)
+    c = data["c"]
+    P_data = data["P_data"]
+
+    state = defaultdict(dict)
+    state[j] = {
+        "loss_mu": [],
+        "loss_c": [],
+        "loss_P_datas": [],
+        "mu_rs": [],
+        "c_rs": [],
+    }
+
+    def mse(x, x_true):
+        return jnp.mean(jnp.square(x - x_true)) / 2.0
+
+    @jit
+    def ATr_loss(mu, c, ATT_masks, P_data):
+        P_pred, d_mu, d_ATT_masks, d_c = ATr(mu, ATT_masks, c, P_data)
+        residual = P_pred - jnp.expand_dims(P_data, -1)
+        loss = mse(P_pred.squeeze(), P_data)
+        return loss, (d_mu, d_c)
+
+    mu_r = jnp.zeros((1, *N, 1))
+    c_r = jnp.ones((1, *N, 1)) * u.C
+
+    optimizer = optax.adam(learning_rate=0.5)
+    opt_state = optimizer.init((mu_r, c_r))
+
+    for i in range(u.RECON_ITERATIONS):
+        loss, (grad_mu, grad_c) = ATr_loss(mu_r[0], c_r[0], ATT_masks, P_data)
+
+        grad_mu = grad_mu.reshape((1, *N, 1))
+        grad_c = grad_c.reshape((1, *N, 1))
+        updates, opt_state = optimizer.update((grad_mu, grad_c), opt_state)
+        mu_r, c_r = optax.apply_updates((mu_r, c_r), updates)
+        mu_r = jnp.clip(mu_r, 0)  # Apply non-negativity constraint
+
+        state[j]["loss_P_datas"].append(loss)
+        state[j]["mu_rs"].append(mu_r)
+        state[j]["c_rs"].append(c_r)
+        state[j]["loss_mu"].append(mse(mu_r.squeeze(), mu))
+        state[j]["loss_c"].append(mse(c_r.squeeze(), c))
+
+    print_recon_losses(j, state)
+    save_recon(j, state)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", type=str, default="t", nargs="?")
-    parser.add_argument("cont", type=bool, default=True, nargs="?")
+    parser.add_argument("mode", type=str, default="x", nargs="?")
+    parser.add_argument("cont", type=bool, default=False, nargs="?")
     args = parser.parse_args()
     if args.mode == "t":
         train_R(args.cont)
     elif args.mode == "r":
         reconstruct()
     else:
-        try_this()
+        reconstruct_no_reg_opt(0)

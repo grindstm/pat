@@ -23,7 +23,7 @@ class PADataset():
             self.data[idx] = dict()
             mu = np.array(gd.pad_0_wrapper(
                 gd.generate_mu_2d(np.load(u.file(u.mu_path, idx))), TISSUE_MARGIN
-            ))
+            )).astype(jnp.float32)
             angles = np.load(u.file(u.angles_path, idx))
             # ATT_masks = gd.pad_1_wrapper(np.load(u.file(u.ATT_masks_path, idx)), TISSUE_MARGIN)
             ATT_masks = np.load(u.file(u.ATT_masks_path, idx))

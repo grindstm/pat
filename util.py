@@ -12,6 +12,7 @@ except ImportError:
 
 # environment variable to prevent jax preallocation
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 
 
 def timer(func):
@@ -51,7 +52,12 @@ TRAIN_ITERATIONS = params["train"]["train_iterations"]
 
 NOISE_AMPLITUDE = params["reconstruct"]["noise_amplitude"]
 RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
-LEARNING_RATE = params["reconstruct"]["learning_rate"]
+LR_MU_R = params["reconstruct"]["lr_mu_r"]
+LR_C_R = params["reconstruct"]["lr_c_r"]
+
+LR_R_MU = params["train"]["lr_R_mu"]
+LR_R_C = params["train"]["lr_R_c"]
+
 
 
 mu_path = os.path.join(DATA_PATH, "mu")
@@ -65,8 +71,8 @@ P_data_path = os.path.join(DATA_PATH, "P_data")
 P_data_noisy_path = os.path.join(DATA_PATH, "P_data_noisy")
 mu_r_path = os.path.join(DATA_PATH, "mu_r")
 c_r_path = os.path.join(DATA_PATH, "c_r")
-params_R_mu_path = os.path.join(DATA_PATH, "params_R_mu")
-params_R_c_path = os.path.join(DATA_PATH, "params_R_c")
+params_R_mu_path = os.path.join(DATA_PATH, "checkpoints", "params_R_mu")
+params_R_c_path = os.path.join(DATA_PATH, "checkpoints", "params_R_c")
 
 
 

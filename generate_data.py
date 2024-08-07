@@ -36,7 +36,7 @@ def generate_vessels_3d(N, shrink_factor=1):
     """
     Generate a 3D volume of vessels
     """
-    sim = VSystemGenerator(tissue_volume=N * shrink_factor, d0_mean=20.0, d0_std=5.0)
+    sim = VSystemGenerator(tissue_volume=np.array(N) * shrink_factor, d0_mean=20.0, d0_std=5.0)
     mu, n_iter = sim.create_network()
 
     if shrink_factor != 1:
@@ -46,7 +46,7 @@ def generate_vessels_3d(N, shrink_factor=1):
 
 
 def generate_mu_2d(mu_3d):
-    return np.sum(mu_3d, axis=0)
+    return jnp.sum(mu_3d, axis=0)
 
 
 # ______________________________________________________
@@ -121,7 +121,7 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
 
     distances = ux * X * dx + uy * Y * dx
     mask = jnp.exp(-attenuation * distances)
-    result = mask * volume
+    result = mask/jnp.max(mask) * volume
     return result
 
 
@@ -225,7 +225,8 @@ def generate_2d_data(mu):
 
     # Illumination
     # ----------------------
-    angles = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
+    # angles = np.random.uniform(0, 360, u.NUM_LIGHTING_ANGLES)
+    angles = jnp.linspace(0, 360, u.NUM_LIGHTING_ANGLES, endpoint=False)
     jnp.save(u.file(u.angles_path, i), angles)
 
     ATT_masks = attenuation_mask_directional_2d_vmap(
