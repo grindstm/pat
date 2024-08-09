@@ -36,6 +36,7 @@ class PADataset():
             sensors = np.load(u.file(u.sensors_path, idx))
             self.data[idx].update(
                 {
+                    "file_idx": idx,
                     "mu": mu,
                     "angles": angles,
                     "ATT_masks": ATT_masks,

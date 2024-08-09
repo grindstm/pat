@@ -29,7 +29,6 @@ def timer(func):
 
     return wrapper_timer
 
-
 params = yaml.safe_load(open("params.yaml"))
 DATA_PATH = params["file"]["data_path"]
 BATCH_SIZE = params["generate_data"]["batch_size"]
@@ -48,7 +47,6 @@ SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"]["sound_speed_variation_ampl
 LIGHTING_ATTENUATION = params["lighting"]["lighting_attenuation"]
 NUM_LIGHTING_ANGLES = params["lighting"]["num_lighting_angles"]
 ATTENUATION = params["lighting"]["attenuation"]
-TRAIN_ITERATIONS = params["train"]["train_iterations"]
 
 NOISE_AMPLITUDE = params["reconstruct"]["noise_amplitude"]
 RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
@@ -57,9 +55,11 @@ LR_C_R = params["reconstruct"]["lr_c_r"]
 
 LR_R_MU = params["train"]["lr_R_mu"]
 LR_R_C = params["train"]["lr_R_c"]
+DROPOUT = params["train"]["dropout"]
+TRAIN_FILE_START = params["train"]["train_file_start"]
+TRAIN_FILE_END = params["train"]["train_file_end"]
 
-
-
+# metrics_path = os.path.join(DATA_PATH, "metrics")
 mu_path = os.path.join(DATA_PATH, "mu")
 angles_path = os.path.join(DATA_PATH, "angles")
 ATT_masks_path = os.path.join(DATA_PATH, "ATT_masks")
@@ -73,10 +73,12 @@ mu_r_path = os.path.join(DATA_PATH, "mu_r")
 c_r_path = os.path.join(DATA_PATH, "c_r")
 params_R_mu_path = os.path.join(DATA_PATH, "checkpoints", "params_R_mu")
 params_R_c_path = os.path.join(DATA_PATH, "checkpoints", "params_R_c")
-
-
+checkpoints_path = os.path.join(DATA_PATH, "checkpoints")
+state_path = os.path.join(DATA_PATH, "state")
 
 os.makedirs(DATA_PATH, exist_ok=True)
+# os.makedirs(metrics_path, exist_ok=True)
+
 os.makedirs(mu_path, exist_ok=True)
 os.makedirs(angles_path, exist_ok=True)
 os.makedirs(c_path, exist_ok=True)
@@ -87,6 +89,7 @@ os.makedirs(P_0_path, exist_ok=True)
 os.makedirs(mu_r_path, exist_ok=True)
 os.makedirs(c_r_path, exist_ok=True)
 os.makedirs(ATT_masks_path, exist_ok=True)
+
 
 def file(path, index, iteration=None):
     if iteration is not None:
@@ -123,36 +126,6 @@ def max_iteration():
         )
 
 
-# def loop(func):
-#     exit_flag = False
-#     signal.signal(signal.SIGINT, signal_handler)
-#     for file in os.listdir(f"{IN_PATH}p0/"):
-#         if exit_flag:
-#             break
-
-#         print(f"Processing {file}")
-#         # p0 files which don't have a corresponding p_r file
-#         if os.path.exists(OUT_PATH + f"p_r/{file.split('.')[0]}"):
-#             continue
-
-#         func(file)
-# if __name__ == "__main__":
-#     params = yaml.safe_load(open("params.yaml"))
-#     BATCH_SIZE = params["generate_data"]["batch_size"]
-#     N = tuple(params["geometry"]["N"])
-#     DX = tuple(params["geometry"]["dx"])
-#     C = params["geometry"]["c"]
-#     CFL = params["geometry"]["cfl"]
-#     PML_MARGIN = params["geometry"]["pml_margin"]
-#     TISSUE_MARGIN = params["geometry"]["tissue_margin"]
-#     SENSOR_MARGIN = params["geometry"]["sensor_margin"]
-#     NUM_SENSORS = params["geometry"]["num_sensors"]
-#     SOUND_SPEED_PERIODICITY = params["geometry"]["sound_speed_periodicity"]
-#     SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"][
-#         "sound_speed_variation_amplitude"
-#     ]
-
-
 # Reshape p_data to 3D
 # p_data_3d = p_data.reshape(
 #     int(time_axis.Nt),
@@ -160,8 +133,6 @@ def max_iteration():
 #     int(jnp.sqrt(NUM_SENSORS))
 # )
 # p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
-
-# Save p0, p_data and sensor positions
 
 
 # def add_gaussian_noise(data, noise_std_dev, key):

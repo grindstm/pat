@@ -151,7 +151,7 @@ def attenuation_mask_directional_3d(angles, volume, dx, attenuation):
     result = mask * volume
     return result
 
-
+@jit
 def batch_attenuate_light(volume, attenuation, dx, angles):
     """
     Returns a batch of images for a volume illuminated at given angles. Use this to avoid the overhead of vmap.

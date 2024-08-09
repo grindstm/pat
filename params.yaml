@@ -1,8 +1,8 @@
 file:
-  data_path: data_t/
+  data_path: data_/
 
 generate_data:
-  batch_size: 10
+  batch_size: 1000
 
 geometry:
   N: [128, 128, 128] # including margins. Use power of 2
@@ -21,17 +21,18 @@ geometry:
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 6
+  num_lighting_angles: 20
   attenuation: 100 # attenuation coefficient
 
 reconstruct:
   noise_amplitude: 10000000
-  recon_iterations: 5
-  lr_mu_r: 0.15
-  lr_c_r: 0.06
+  recon_iterations: 10
+  lr_mu_r: 1.
+  lr_c_r: .1
 
 train:
   lr_R_mu: .001
   lr_R_c: .001
-  train_iterations: 2
-
+  dropout: 0.1
+  train_file_start: 0
+  train_file_end: 800
