@@ -243,15 +243,18 @@ def generate_2d_data(mu):
 
     # Sound speed
     # ----------------------
-    if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
+    if u.C_VARIATION_AMPLITUDE == 0:
         c = u.C * jnp.ones(N)
     else:
         noise = generate_perlin_noise_2d(
             N,
-            [u.SOUND_SPEED_PERIODICITY] * 2,
+            [u.C_PERIODICITY] * 2,
             tileable=(False, False),
         )
-        c = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
+        mu_binary = pad_0_wrapper(jnp.where(mu > 0, 1, 0), TISSUE_MARGIN)
+        c = u.C + u.C_VARIATION_AMPLITUDE * jnp.array(noise) 
+        c = c.at[mu_binary.astype(bool)].set(u.C_BLOOD)
+
 
     # ----------------------
 
@@ -304,15 +307,17 @@ def generate_3d_data(mu):
 
     # Sound speed
     # ----------------------
-    if u.SOUND_SPEED_VARIATION_AMPLITUDE == 0:
+    if u.C_VARIATION_AMPLITUDE == 0:
         c = u.C * jnp.ones(N)
     else:
         noise = generate_perlin_noise_3d(
             N,
-            [u.SOUND_SPEED_PERIODICITY] * 3,
+            [u.C_PERIODICITY] * 3,
             tileable=(False, False, False),
         )
-        c = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE * noise
+        mu_binary = pad_0_wrapper(jnp.where(mu > 0, 1, 0), TISSUE_MARGIN)
+        c = u.C + u.C_VARIATION_AMPLITUDE * jnp.array(noise) 
+        c = c.at[mu_binary.astype(bool)].set(u.C_BLOOD)
 
     # p0 = device_put(p0, devices("cuda")[0])
 

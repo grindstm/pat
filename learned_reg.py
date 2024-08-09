@@ -309,6 +309,8 @@ def train_R(cont=False):
             key=dropout_key, data=state["state_R_mu"].step
         )
 
+        
+
         def loss_fn(params, model, x, dx, x_true, opt_x, opt_x_state, batch_stats):
             x, opt_x_state, updates = step(
                 params,

@@ -1,27 +1,28 @@
 file:
-  data_path: data_/
+  data_path: data_0/
 
 generate_data:
-  batch_size: 1000
+  batch_size: 50
 
 geometry:
   N: [128, 128, 128] # including margins. Use power of 2
   shrink_factor: 3
   dims: 2
   dx: [0.1e-3, 0.1e-3, 0.1e-3]
-  c: 1500
+  c: 1450
+  c_periodicity: 2
+  c_variation_amplitude: 10
+  c_blood: 1550
   cfl: 0.3
   pml_margin: [12, 12, 12] # each side
   tissue_margin: [20, 20, 20] 
   sensor_margin: [16, 16, 16]
   num_sensors: 256 # use number with integer sqrt
 
-  sound_speed_periodicity: 2
-  sound_speed_variation_amplitude: 10
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 20
+  num_lighting_angles: 50
   attenuation: 100 # attenuation coefficient
 
 reconstruct:
@@ -31,8 +32,9 @@ reconstruct:
   lr_c_r: .1
 
 train:
+  checkpoint_index: 0
   lr_R_mu: .001
   lr_R_c: .001
   dropout: 0.1
   train_file_start: 0
-  train_file_end: 800
+  train_file_end: 50

@@ -29,6 +29,7 @@ def timer(func):
 
     return wrapper_timer
 
+
 params = yaml.safe_load(open("params.yaml"))
 DATA_PATH = params["file"]["data_path"]
 BATCH_SIZE = params["generate_data"]["batch_size"]
@@ -37,13 +38,14 @@ SHRINK_FACTOR = params["geometry"]["shrink_factor"]
 DIMS = params["geometry"]["dims"]
 DX = tuple(params["geometry"]["dx"])
 C = params["geometry"]["c"]
+C_PERIODICITY = params["geometry"]["c_periodicity"]
+C_VARIATION_AMPLITUDE = params["geometry"]["c_variation_amplitude"]
+C_BLOOD = params["geometry"]["c_blood"]
 CFL = params["geometry"]["cfl"]
 PML_MARGIN = params["geometry"]["pml_margin"]
 TISSUE_MARGIN = params["geometry"]["tissue_margin"]
 SENSOR_MARGIN = tuple(params["geometry"]["sensor_margin"])
 NUM_SENSORS = params["geometry"]["num_sensors"]
-SOUND_SPEED_PERIODICITY = params["geometry"]["sound_speed_periodicity"]
-SOUND_SPEED_VARIATION_AMPLITUDE = params["geometry"]["sound_speed_variation_amplitude"]
 LIGHTING_ATTENUATION = params["lighting"]["lighting_attenuation"]
 NUM_LIGHTING_ANGLES = params["lighting"]["num_lighting_angles"]
 ATTENUATION = params["lighting"]["attenuation"]
@@ -53,6 +55,7 @@ RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
 LR_MU_R = params["reconstruct"]["lr_mu_r"]
 LR_C_R = params["reconstruct"]["lr_c_r"]
 
+CHECKPOINT_FILE_INDEX = params["train"]["checkpoint_index"]
 LR_R_MU = params["train"]["lr_R_mu"]
 LR_R_C = params["train"]["lr_R_c"]
 DROPOUT = params["train"]["dropout"]
@@ -73,7 +76,7 @@ mu_r_path = os.path.join(DATA_PATH, "mu_r")
 c_r_path = os.path.join(DATA_PATH, "c_r")
 params_R_mu_path = os.path.join(DATA_PATH, "checkpoints", "params_R_mu")
 params_R_c_path = os.path.join(DATA_PATH, "checkpoints", "params_R_c")
-checkpoints_path = os.path.join(DATA_PATH, "checkpoints")
+checkpoints_path = os.path.join(DATA_PATH, "checkpoints", str(CHECKPOINT_FILE_INDEX))
 state_path = os.path.join(DATA_PATH, "state")
 
 os.makedirs(DATA_PATH, exist_ok=True)
