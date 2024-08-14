@@ -423,8 +423,8 @@ if __name__ == "__main__":
         # ----------------------
         # Add noise to the data
         # ----------------------
-        key = random.PRNGKey(int(time.time()))
-        keys = random.split(key, u.NUM_LIGHTING_ANGLES)
+        key = random.PRNGKey(i)
+        key, *keys = random.split(key, u.NUM_LIGHTING_ANGLES+1)
         P_data_noisy = add_colored_noise_vmap(keys, P_data, 1.0, u.NOISE_AMPLITUDE)
 
         # ----------------------

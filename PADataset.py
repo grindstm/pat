@@ -27,7 +27,7 @@ class PADataset():
             angles = np.load(u.file(u.angles_path, idx))
             # ATT_masks = gd.pad_1_wrapper(np.load(u.file(u.ATT_masks_path, idx)), TISSUE_MARGIN)
             ATT_masks = np.load(u.file(u.ATT_masks_path, idx))
-            ATT_masks = vmap(gd.pad_1_wrapper, in_axes=(0,None))(ATT_masks, TISSUE_MARGIN)
+            ATT_masks = jnp.expand_dims(vmap(gd.pad_1_wrapper, in_axes=(0,None))(ATT_masks, TISSUE_MARGIN),-1)
 
             P_0 = np.load(u.file(u.P_0_path, idx))
             c = np.load(u.file(u.c_path, idx))

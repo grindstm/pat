@@ -1,8 +1,8 @@
 file:
-  data_path: data_0/
+  data_path: data_1/
 
 generate_data:
-  batch_size: 50
+  batch_size: 2
 
 geometry:
   N: [128, 128, 128] # including margins. Use power of 2
@@ -12,29 +12,31 @@ geometry:
   c: 1450
   c_periodicity: 2
   c_variation_amplitude: 10
-  c_blood: 1550
+  c_blood: 1540
   cfl: 0.3
   pml_margin: [12, 12, 12] # each side
   tissue_margin: [20, 20, 20] 
   sensor_margin: [16, 16, 16]
-  num_sensors: 256 # use number with integer sqrt
+  num_sensors: 128 # for 3D, use number with integer sqrt (sensor generation)
 
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 50
-  attenuation: 100 # attenuation coefficient
+  num_lighting_angles: 10
+  attenuation: 300 # attenuation coefficient
 
 reconstruct:
   noise_amplitude: 10000000
   recon_iterations: 10
   lr_mu_r: 1.
-  lr_c_r: .1
+  lr_c_r: 1.
+  recon_file_start: 0
+  recon_file_end: 1
 
 train:
   checkpoint_index: 0
-  lr_R_mu: .001
-  lr_R_c: .001
+  lr_R_mu: 1.
+  lr_R_c: 1.
   dropout: 0.1
   train_file_start: 0
-  train_file_end: 50
+  train_file_end: 10

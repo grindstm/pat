@@ -12,6 +12,7 @@ except ImportError:
 
 # environment variable to prevent jax preallocation
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.99"
 # os.environ["JAX_TRACEBACK_FILTERING"] = "off"
 
 
@@ -25,7 +26,7 @@ def timer(func):
         end_time = time.perf_counter()
         run_time = end_time - start_time
         print(f"Finished {func.__name__!r} in {run_time:.4f} secs")
-        return value
+        return value, run_time
 
     return wrapper_timer
 
@@ -54,6 +55,8 @@ NOISE_AMPLITUDE = params["reconstruct"]["noise_amplitude"]
 RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
 LR_MU_R = params["reconstruct"]["lr_mu_r"]
 LR_C_R = params["reconstruct"]["lr_c_r"]
+RECON_FILE_START = params["reconstruct"]["recon_file_start"]
+RECON_FILE_END = params["reconstruct"]["recon_file_end"]
 
 CHECKPOINT_FILE_INDEX = params["train"]["checkpoint_index"]
 LR_R_MU = params["train"]["lr_R_mu"]
@@ -116,6 +119,9 @@ def max_file_index(path):
 
 
 def max_iteration():
+    """
+    Returns the maximum iteration number in the mu_r_path directory.
+    """
     if not os.path.exists(mu_r_path):
         return 0
     else:
