@@ -33,25 +33,27 @@ def timer(func):
 
 params = yaml.safe_load(open("params.yaml"))
 DATA_PATH = params["file"]["data_path"]
+
 BATCH_SIZE = params["generate_data"]["batch_size"]
-N = tuple(params["geometry"]["N"])
-SHRINK_FACTOR = params["geometry"]["shrink_factor"]
-DIMS = params["geometry"]["dims"]
-DX = tuple(params["geometry"]["dx"])
-C = params["geometry"]["c"]
-C_PERIODICITY = params["geometry"]["c_periodicity"]
-C_VARIATION_AMPLITUDE = params["geometry"]["c_variation_amplitude"]
-C_BLOOD = params["geometry"]["c_blood"]
-CFL = params["geometry"]["cfl"]
-PML_MARGIN = params["geometry"]["pml_margin"]
-TISSUE_MARGIN = params["geometry"]["tissue_margin"]
-SENSOR_MARGIN = tuple(params["geometry"]["sensor_margin"])
-NUM_SENSORS = params["geometry"]["num_sensors"]
+N = tuple(params["generate_data"]["N"])
+SHRINK_FACTOR = params["generate_data"]["shrink_factor"]
+DIMS = params["generate_data"]["dims"]
+DX = tuple(params["generate_data"]["dx"])
+C = params["generate_data"]["c"]
+C_PERIODICITY = params["generate_data"]["c_periodicity"]
+C_VARIATION_AMPLITUDE = params["generate_data"]["c_variation_amplitude"]
+C_BLOOD = params["generate_data"]["c_blood"]
+CFL = params["generate_data"]["cfl"]
+PML_MARGIN = params["generate_data"]["pml_margin"]
+TISSUE_MARGIN = params["generate_data"]["tissue_margin"]
+SENSOR_MARGIN = tuple(params["generate_data"]["sensor_margin"])
+NUM_SENSORS = params["generate_data"]["num_sensors"]
+NOISE_AMPLITUDE = params["generate_data"]["noise_amplitude"]
+
 LIGHTING_ATTENUATION = params["lighting"]["lighting_attenuation"]
 NUM_LIGHTING_ANGLES = params["lighting"]["num_lighting_angles"]
 ATTENUATION = params["lighting"]["attenuation"]
 
-NOISE_AMPLITUDE = params["reconstruct"]["noise_amplitude"]
 RECON_ITERATIONS = params["reconstruct"]["recon_iterations"]
 LR_MU_R = params["reconstruct"]["lr_mu_r"]
 LR_C_R = params["reconstruct"]["lr_c_r"]
