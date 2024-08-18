@@ -4,4 +4,4 @@
 *.pyc
 archive/
 data/
-data_/
+data_*/

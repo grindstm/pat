@@ -79,8 +79,9 @@ mu_r_path = os.path.join(DATA_PATH, "mu_r")
 c_r_path = os.path.join(DATA_PATH, "c_r")
 params_R_mu_path = os.path.join(DATA_PATH, "checkpoints", "params_R_mu")
 params_R_c_path = os.path.join(DATA_PATH, "checkpoints", "params_R_c")
-checkpoints_path = os.path.join(DATA_PATH, "checkpoints", str(CHECKPOINT_FILE_INDEX))
+checkpoints_path = os.path.abspath(os.path.join(DATA_PATH, "checkpoints", str(CHECKPOINT_FILE_INDEX)))
 state_path = os.path.join(DATA_PATH, "state")
+profile_dir = os.path.join(DATA_PATH, "profile")
 
 os.makedirs(DATA_PATH, exist_ok=True)
 # os.makedirs(metrics_path, exist_ok=True)
@@ -95,6 +96,7 @@ os.makedirs(P_0_path, exist_ok=True)
 os.makedirs(mu_r_path, exist_ok=True)
 os.makedirs(c_r_path, exist_ok=True)
 os.makedirs(ATT_masks_path, exist_ok=True)
+os.makedirs(profile_dir, exist_ok=True)
 
 
 def file(path, index, iteration=None):

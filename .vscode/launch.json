@@ -14,3 +14,47 @@
         }
     ]
 }
+
+// {
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "Debug Script A",
+//             "type": "python",
+//             "request": "launch",
+//             "program": "${workspaceFolder}/script_a.py",
+//             "console": "integratedTerminal",
+//             "args": "--arg1 valueA --arg2 valueB"
+//         },
+//         {
+//             "name": "Debug Script B",
+//             "type": "python",
+//             "request": "launch",
+//             "program": "${workspaceFolder}/script_b.py",
+//             "console": "integratedTerminal",
+//             "args": "${input:argsForScriptB}"
+//         },
+//         {
+//             "name": "Debug Script C",
+//             "type": "python",
+//             "request": "launch",
+//             "program": "${workspaceFolder}/script_c.py",
+//             "console": "integratedTerminal",
+//             "args": "${input:argsForScriptC}"
+//         }
+//     ],
+//     "inputs": [
+//         {
+//             "id": "argsForScriptB",
+//             "type": "promptString",
+//             "description": "Enter arguments for Script B",
+//             "default": "--argX defaultX --argY defaultY"
+//         },
+//         {
+//             "id": "argsForScriptC",
+//             "type": "promptString",
+//             "description": "Enter arguments for Script C",
+//             "default": "--argM defaultM --argN defaultN"
+//         }
+//     ]
+// }

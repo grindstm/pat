@@ -118,10 +118,13 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
     x_indices = jnp.arange(width)
     y_indices = jnp.arange(height)
     X, Y = jnp.meshgrid(x_indices, y_indices, indexing="ij")
+    r = np.min((width, height))//2
+    X = X - r + r * ux
+    Y = Y - r + r * uy
 
     distances = ux * X * dx + uy * Y * dx
     mask = jnp.exp(-attenuation * distances)
-    result = mask/jnp.max(mask) * volume
+    result = jnp.clip(mask * volume, max=1.)
     return result
 
 
@@ -141,14 +144,19 @@ def attenuation_mask_directional_3d(angles, volume, dx, attenuation):
     uz = jnp.sin(elevation_rad)
 
     depth, height, width = volume.shape
+    r = np.min((depth, width, height))//2
     x_indices = jnp.arange(width)
     y_indices = jnp.arange(height)
     z_indices = jnp.arange(depth)
     X, Y, Z = jnp.meshgrid(x_indices, y_indices, z_indices, indexing="ij")
+    X = X - r + r * ux
+    Y = Y - r + r * uy
+    Z = Z - r + r * uz
+
 
     distances = ux * X * dx + uy * Y * dx + uz * Z * dx
     mask = jnp.exp(-attenuation * distances)
-    result = mask * volume
+    result = jnp.clip(mask * volume, max=1.)
     return result
 
 @jit
@@ -267,7 +275,7 @@ def generate_2d_data(mu):
     # print(time_axis.dt, time_axis.Nt)
     P_0 = vmap(FourierSeries, (0, None))(P_0, domain)
 
-    P_data = batch_compiled_simulator(medium, time_axis, P_0)
+    P_data = batch_compiled_simulator(medium, time_axis, P_0)[0]
 
     return P_0, ATT_masks, c, P_data
 
@@ -423,8 +431,8 @@ if __name__ == "__main__":
         # ----------------------
         # Add noise to the data
         # ----------------------
-        key = random.PRNGKey(i)
-        key, *keys = random.split(key, u.NUM_LIGHTING_ANGLES+1)
+        key = random.PRNGKey(int(time.time()))
+        keys = random.split(key, u.NUM_LIGHTING_ANGLES)
         P_data_noisy = add_colored_noise_vmap(keys, P_data, 1.0, u.NOISE_AMPLITUDE)
 
         # ----------------------
