@@ -89,7 +89,7 @@ def point_plane(num_points, N, margin):
 
 
 @jit
-def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
+def attenuation_mask_directional_2d(angle, volume, dx, attenuation, r):
     """
     Compute the attenuation mask for a 2D volume given an angle, voxel size, and attenuation coefficient.
 
@@ -103,6 +103,8 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
         The voxel size.
     attenuation : float
         The attenuation coefficient.
+    r : int
+        The radius of the volume.
 
     Returns
     -------
@@ -118,9 +120,10 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
     x_indices = jnp.arange(width)
     y_indices = jnp.arange(height)
     X, Y = jnp.meshgrid(x_indices, y_indices, indexing="ij")
-    r = np.min((width, height))//2
-    X = X - r + r * ux
-    Y = Y - r + r * uy
+    # if r is None:
+    #     r = np.min((width, height))//2
+    X = X - width//2 + r * ux
+    Y = Y - height//2 + r * uy
 
     distances = ux * X * dx + uy * Y * dx
     mask = jnp.exp(-attenuation * distances)
@@ -129,7 +132,7 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation):
 
 
 attenuation_mask_directional_2d_vmap = vmap(
-    attenuation_mask_directional_2d, in_axes=(0, None, None, None)
+    attenuation_mask_directional_2d, in_axes=(0, None, None, None, None)
 )
 
 
@@ -149,9 +152,9 @@ def attenuation_mask_directional_3d(angles, volume, dx, attenuation):
     y_indices = jnp.arange(height)
     z_indices = jnp.arange(depth)
     X, Y, Z = jnp.meshgrid(x_indices, y_indices, z_indices, indexing="ij")
-    X = X - r + r * ux
-    Y = Y - r + r * uy
-    Z = Z - r + r * uz
+    X = X - width//2 + r * ux
+    Y = Y - height//2 + r * uy
+    Z = Z - depth//2 + r * uz
 
 
     distances = ux * X * dx + uy * Y * dx + uz * Z * dx
@@ -238,16 +241,24 @@ def generate_2d_data(mu):
     jnp.save(u.file(u.angles_path, i), angles)
 
     ATT_masks = attenuation_mask_directional_2d_vmap(
-        angles, jnp.ones_like(mu), DX[0], u.ATTENUATION
+        angles, jnp.ones(N), DX[0], u.ATTENUATION, N[0]/2-u.TISSUE_MARGIN[0]
     )
-    MU_att = ATT_masks * mu
+    # ATT_masks = attenuation_mask_directional_2d_vmap(
+    #     angles, jnp.ones_like(mu), DX[0], u.ATTENUATION
+    # )
+    # MU_att = ATT_masks * mu
 
     # Add margin to mu
     # ----------------------
-    P_0 = vmap(pad_0_wrapper, in_axes=(0, None))(
-        MU_att,
-        TISSUE_MARGIN,
-    )
+    # mu = vmap(pad_0_wrapper, in_axes=(0, None))(
+    #     mu,
+    #     # MU_att,
+    #     TISSUE_MARGIN,
+    # )
+
+    mu = pad_0_wrapper(mu, TISSUE_MARGIN)
+
+    P_0 = ATT_masks * mu
 
     # Sound speed
     # ----------------------
@@ -259,7 +270,8 @@ def generate_2d_data(mu):
             [u.C_PERIODICITY] * 2,
             tileable=(False, False),
         )
-        mu_binary = pad_0_wrapper(jnp.where(mu > 0, 1, 0), TISSUE_MARGIN)
+        mu_binary = jnp.where(mu > 0, 1, 0)
+        # mu_binary = pad_0_wrapper(jnp.where(mu > 0, 1, 0), TISSUE_MARGIN)
         c = u.C + u.C_VARIATION_AMPLITUDE * jnp.array(noise) 
         c = c.at[mu_binary.astype(bool)].set(u.C_BLOOD)
 

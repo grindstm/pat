@@ -38,9 +38,10 @@ class PADataset:
             ).astype(jnp.float32)
             angles = np.load(u.file(u.angles_path, data_idx))
             ATT_masks = np.load(u.file(u.ATT_masks_path, data_idx))
-            ATT_masks = jnp.expand_dims(
-                vmap(gd.pad_1_wrapper, in_axes=(0, None))(ATT_masks, TISSUE_MARGIN), -1
-            )
+            ATT_masks = jnp.expand_dims(ATT_masks, -1)
+            # ATT_masks = jnp.expand_dims(
+            #     vmap(gd.pad_1_wrapper, in_axes=(0, None))(ATT_masks, TISSUE_MARGIN), -1
+            # )
 
             P_0 = np.load(u.file(u.P_0_path, data_idx))
             c = np.load(u.file(u.c_path, data_idx))

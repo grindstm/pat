@@ -1,3 +1,9 @@
+# Photoacoustic Tomography Image Reconstruction
+This repository contains the code used to generate and reconstruct images for the paper "Photoacoustic Tomography Image Reconstruction Simultaneous Reconstruction of Light Absorption and Sound Speed Fields Using Multiple Illumination Angles and Learned Regularization in a Limited View Setting" 
+
+
+If developing on this codebase or as a beginner in the JAX and j-Wave ecosystems, please refer to the [Debugging.md](Debugging.md) file for common errors and hints/solutions.
+
 # Files of interest
 
 Image reconstruction: `reconstruct.py`
