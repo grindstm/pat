@@ -1,10 +1,12 @@
+"""
+Used to set jax environment variables, extract global variables from params.yamls.
+"""
 import signal
 import os
 import time
 import functools
 import sys
 import yaml
-
 try:
     import colored_traceback.auto
 except ImportError:
@@ -18,7 +20,6 @@ os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.99"
 
 def timer(func):
     """A decorator that prints the execution time of the function it decorates."""
-
     @functools.wraps(func)
     def wrapper_timer(*args, **kwargs):
         start_time = time.perf_counter()
@@ -67,7 +68,6 @@ DROPOUT = params["train"]["dropout"]
 TRAIN_FILE_START = params["train"]["train_file_start"]
 TRAIN_FILE_END = params["train"]["train_file_end"]
 
-# metrics_path = os.path.join(DATA_PATH, "metrics")
 mu_path = os.path.join(DATA_PATH, "mu")
 angles_path = os.path.join(DATA_PATH, "angles")
 ATT_masks_path = os.path.join(DATA_PATH, "ATT_masks")
@@ -86,7 +86,6 @@ state_path = os.path.join(DATA_PATH, "state")
 profile_dir = os.path.join(DATA_PATH, "profile")
 
 os.makedirs(DATA_PATH, exist_ok=True)
-# os.makedirs(metrics_path, exist_ok=True)
 
 os.makedirs(mu_path, exist_ok=True)
 os.makedirs(angles_path, exist_ok=True)
@@ -137,17 +136,3 @@ def max_iteration():
             ],
             default=0,
         )
-
-
-# Reshape p_data to 3D
-# p_data_3d = p_data.reshape(
-#     int(time_axis.Nt),
-#     int(jnp.sqrt(NUM_SENSORS)),
-#     int(jnp.sqrt(NUM_SENSORS))
-# )
-# p_data_3d = jnp.transpose(p_data_3d, (1, 2, 0))
-
-
-# def add_gaussian_noise(data, noise_std_dev, key):
-#     noise = jax.random.normal(key, shape=data.shape, dtype=data.dtype) * noise_std_dev
-#     return data + noise

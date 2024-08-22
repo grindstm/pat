@@ -11,7 +11,15 @@ if u.DIMS == 2:
 
 
 class PADataset:
+    """
+    Dataset class for the photoacoustic imaging problem.
+    """
     def __init__(self, path=u.DATA_PATH):
+        """
+        Args:
+            path (str): Path to the dataset. Leave blank to use the path defined in params.yaml.
+        """
+
         self.path = u.DATA_PATH
         self.data = dict()
         self.num_angles = np.load(u.file(u.angles_path, 0)).shape[0]
@@ -39,10 +47,6 @@ class PADataset:
             angles = np.load(u.file(u.angles_path, data_idx))
             ATT_masks = np.load(u.file(u.ATT_masks_path, data_idx))
             ATT_masks = jnp.expand_dims(ATT_masks, -1)
-            # ATT_masks = jnp.expand_dims(
-            #     vmap(gd.pad_1_wrapper, in_axes=(0, None))(ATT_masks, TISSUE_MARGIN), -1
-            # )
-
             P_0 = np.load(u.file(u.P_0_path, data_idx))
             c = np.load(u.file(u.c_path, data_idx))
             P_data = np.load(u.file(u.P_data_path, data_idx))
@@ -91,38 +95,3 @@ class PADataset:
             c_r = np.zeros_like(self.data[idx]["c"])
         self.data[idx].update({"mu_r": mu_r, "c_r": c_r})
         return self.data[idx]
-
-
-
-    # def __getitem__(self, idx):
-    #     if idx in self.data:
-    #         return self.data[idx]
-    #     else:
-    #         self.data[idx] = dict()
-    #         mu = np.array(gd.pad_0_wrapper(
-    #             gd.generate_mu_2d(np.load(u.file(u.mu_path, idx))), TISSUE_MARGIN
-    #         )).astype(jnp.float32)
-    #         angles = np.load(u.file(u.angles_path, idx))
-    #         # ATT_masks = gd.pad_1_wrapper(np.load(u.file(u.ATT_masks_path, idx)), TISSUE_MARGIN)
-    #         ATT_masks = np.load(u.file(u.ATT_masks_path, idx))
-    #         ATT_masks = jnp.expand_dims(vmap(gd.pad_1_wrapper, in_axes=(0,None))(ATT_masks, TISSUE_MARGIN),-1)
-
-    #         P_0 = np.load(u.file(u.P_0_path, idx))
-    #         c = np.load(u.file(u.c_path, idx))
-    #         P_data = np.load(u.file(u.P_data_path, idx))
-    #         P_data_noisy = np.load(u.file(u.P_data_noisy_path, idx))
-    #         sensors = np.load(u.file(u.sensors_path, idx))
-    #         self.data[idx].update(
-    #             {
-    #                 "file_idx": idx,
-    #                 "mu": mu,
-    #                 "angles": angles,
-    #                 "ATT_masks": ATT_masks,
-    #                 "P_0": P_0,
-    #                 "c": c,
-    #                 "P_data": P_data,
-    #                 "P_data_noisy": P_data_noisy,
-    #                 "sensors": sensors,
-    #             }
-    #         )
-    #         return self.data[idx]

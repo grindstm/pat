@@ -14,7 +14,7 @@ Dataset class: `PADataset.py`. Prepares generated and reconstructed images when 
 
 Setting parameters: `params.yaml`. These parameters are read by `util.py`, which is imported to all other scripts as `u`, exposing the parameters. `util.py` also defines some helper functions and establishes important environment flags for using JAX in this workflow. 
 
-Files with names containing `vis` involve visualizing results and generating figures:
+Files with names containing `vis` involve visualizing results, running experiments and generating figures:
 - `vis.ipynb` provides an interactive "dashboard" for viewing generated and reconstructed images.
 - `vis_setup` creates figures for the Data Generation section of the paper.
 - `vis.py` creates an interface for viewing 3D setups and results.
@@ -64,18 +64,28 @@ pip install -r requirements.txt
 - `reconstruct`
   - `recon_iterations`: a default value for reconstruction iterations. This value is often overridden as reconstruction functions are called directly.
   - `lr_mu_r`, `lr_c_r`: default values for learning rates used by the `mu_r`, `c_r` optimizers.
-  - `recon_file_start`, `recon_file_end`: indices of files to be reconstructed in a batch when running `python reconstruct.py -r`. 
+  - `recon_file_start`, `recon_file_end`: indices of files to be reconstructed in a batch when running `python reconstruct.py r2`. 
 - `train`
   - `lr_R_mu`, `lr_R_c`: default values for learning rates used by the regularizer parameter optimizers.
   - `train_file_start`, `train_file_end`: indices of files to be reconstructed in a batch when running `python reconstruct.py -t`.
 ## 2. Run `generate_data.py`
 Run `python generate_data.py`. Many operations are parallelized using JAX, and some guardrails are in place to prevent GPU memory exhaustion, however a minimum of 12GB of VRAM is recommended. 
 ## 3. Reconstruct with `reconstruct.py`
-The number of illuminations and reconstruction iterations can be set, e.g.: `python reconstruct.py r -l=5 -i=10` for 5 illuminations (drawn, evenly spaced from those generated) and 10 iterations. This will load any existing trained parameters and reconstruct the images in the `data_path` based on the `recon_file_start` and `recon_file_end` parameters. 
+Use argument `r1` to reconstruct using 1 optimizer and `r2` to reconstruct using 2. Gradients are shared during these optimizations. The number of illuminations and reconstruction iterations can be set, e.g.: `python reconstruct.py r2 -l=5 -i=10` for 5 illuminations (drawn, evenly spaced from those generated) and 10 iterations. This will load any existing trained parameters and reconstruct the images in the `data_path` based on the `recon_file_start` and `recon_file_end` parameters. Argument `r3` reconstructs using the learned regularizer by loading the latest checkpoint in the checkpoints folder, which is automatically created when training. 
 
-`python reconstruct.py t` will train the parameters of the most recent experiment using the files indexed `train_file_start` - `train_file_end`. The `-c` flag will load parameters and continue the last training. When using this, be sure to update `train_file_start` and `train_file_end`.
+`python reconstruct.py t` will train the parameters of the most recent experiment using the files indexed `train_file_start` - `train_file_end`. The `-c` flag will load parameters and continue the last training. When using this, be sure to update `train_file_start` and `train_file_end`. Use `ctrl+c` in the terminal to signal that training should stop. The current file will finish and then training will stop. This prevents JAX from typing up the GPU. 
+
+`python reconstruct.py p` uses from Flax `model.tabulate` to print the construction of the network.
+
+### Changing the model in use
+The models are defined `R=...`. Some commented-out examples exist. Note that the call to `create_train_state` in the training function requires the a list of the shapes of the input images, so currently this must be manually changed if, for instance, switching between networks that take $P_0$ and $\mu$. `print_nets` is also not yet smart enough to know when the model has been changed. 
+
 ## Visualize the results
-The first couple of cells in `vis.ipynb` will display a dashboard that allows you to scrub through the files, illuminations and reconstructions. 
+The first couple of cells in `vis.ipynb` will display a dashboard that allows you to scrub through the files, illuminations and reconstructions. The other `vis...` files contain experiments and visualizations that were used in the paper.
 
 For 3D images, ensure vedo is installed and run `python vis.py`. 
 
+# Notes
+`reconstruct.py` has not been extensively tested on 3D data and there is a strong likelihood of resource exhaustion when using multiple illuminations. 
+
+Please forgive the significant code duplication. This style was adopted to permit the use of `@jit` on functions, though this isn't yet working. 

@@ -1,3 +1,10 @@
+"""
+Visualize generated and reconstructed pressure fields, sound speed, and sensor locations in 3D using vedo.
+
+Usage:
+    python vis.py [data_path] # leave data_path empty to use the default path in params.yaml
+"""
+
 import os
 import jax.numpy as jnp
 import numpy as np
@@ -65,19 +72,10 @@ class VolumeVisualizer:
             title="Iteration Index",
             pos="top-right",
         )
-        # self.plotter.add_slider(
-        #     lambda widget, event: self.apply_threshold(widget, event, p_r_vol),
-        #     0.0,
-        #     0.01,
-        #     title="p_r Threshold",
-        #     value=0.01,
-        #     pos=[(.5,.06), (.7,.06)],
-        # )
-
         # Load sound speed volume
         c_file = os.path.join(self.data_path, "c", f"{self.file_index}.npy")
-        lower = u.C - u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
-        upper = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
+        lower = u.C - u.C_VARIATION_AMPLITUDE / 2
+        upper = u.C + u.C_VARIATION_AMPLITUDE / 2
         c_vol = self.load_volume(c_file)
         
         # vrange = c_vol.scalar_range()
@@ -150,8 +148,8 @@ class VolumeVisualizer:
             c_data = self.c_vol_original.tonumpy()
             c_data[c_data < widget.value] = u.C
             c_vol = Volume(c_data)
-            lower = u.C - u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
-            upper = u.C + u.SOUND_SPEED_VARIATION_AMPLITUDE / 2
+            lower = u.C - u.C_VARIATION_AMPLITUDE / 2
+            upper = u.C + u.C_VARIATION_AMPLITUDE / 2
             colors = [
             (lower - 1, [0.0, 1.0, 0.0]),
             (u.C, [1.0, 1.0, 1.0]),

@@ -1,7 +1,6 @@
 file:
   data_path: data_4/
 
-
 generate_data:
   batch_size: 500
   N: [128, 128, 128] # including margins. Use power of 2
@@ -33,7 +32,7 @@ reconstruct:
 
 train:
   checkpoint_index: 0
-  lr_R_mu: .00001
+  lr_R_mu: .0005
   lr_R_c: .0005
   dropout: 0.4
   train_file_start: 350
