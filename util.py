@@ -84,6 +84,7 @@ params_R_c_path = os.path.join(DATA_PATH, "checkpoints", "params_R_c")
 checkpoints_path = os.path.abspath(os.path.join(DATA_PATH, "checkpoints", str(CHECKPOINT_FILE_INDEX)))
 state_path = os.path.join(DATA_PATH, "state")
 profile_dir = os.path.join(DATA_PATH, "profile")
+pres_path = os.path.abspath('../../Presentation/figures/')
 
 os.makedirs(DATA_PATH, exist_ok=True)
 
