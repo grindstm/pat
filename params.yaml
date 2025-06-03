@@ -1,5 +1,5 @@
 file:
-  data_path: data_5/
+  data_path: data_6/
 
 generate_data:
   batch_size: 1000
@@ -26,14 +26,14 @@ lighting:
 reconstruct:
   recon_iterations: 10
   lr_mu_r: 1.
-  lr_c_r: 1.
+  lr_c_r: .5
   recon_file_start: 0
   recon_file_end: 1
 
 train:
   checkpoint_index: 0
   lr_R_mu: .0005
-  lr_R_c: .00000000001
-  dropout: 0.1
+  lr_R_c: .000000001
+  dropout: 0.4
   train_file_start: 0
   train_file_end: 800

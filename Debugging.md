@@ -35,6 +35,8 @@
 - IndexError: Indexing is only supported if there's at least one batch / time dimension
 	- you're trying to index an object shaped (* N, 1) as if it were shaped (1, * N, 1). remove the indexing
 # Jax
+- AttributeError: JVPTracer has no attribute on_grid
+	- 
 - TypeError: '<' not supported between instances of 'int' and 'str'
 	- This occurs within a jitted function when a number becomes 'nan'  
 - TypeError: Cannot interpret value of type <class 'function'> as an abstract array; it does not have a dtype attribute

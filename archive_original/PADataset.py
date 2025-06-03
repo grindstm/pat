@@ -1,7 +1,9 @@
 import os
+from collections import defaultdict
 import numpy as np
 import jax.numpy as jnp
 import util as u
+from util import create_colormap, max_iteration
 import generate_data as gd
 from jax import vmap
 
@@ -14,14 +16,15 @@ class PADataset:
     """
     Dataset class for the photoacoustic imaging problem.
     """
+
     def __init__(self, path=u.DATA_PATH):
         """
         Args:
             path (str): Path to the dataset. Leave blank to use the path defined in params.yaml.
         """
 
-        self.path = u.DATA_PATH
-        self.data = dict()
+        self.path = path
+        self.data = defaultdict()
         self.num_angles = np.load(u.file(u.angles_path, 0)).shape[0]
 
     def __len__(self):
@@ -84,14 +87,23 @@ class PADataset:
         else:
             return data
 
-    def load_recon(self, idx, it):
-        if os.path.exists(u.file(u.mu_r_path, idx, it)):
-            mu_r = np.load(u.file(u.mu_r_path, idx, it))
+    def load_recon(self, idx, it=u.RECON_ITERATIONS, stack=False):
+        if stack:
+            max_it = u.max_iteration()
+            mu_r = np.stack([np.load(u.file(u.mu_r_path, idx, i)) for i in range(max_it+1)])
+            c_r = np.stack([np.load(u.file(u.c_r_path, idx, i)) for i in range(max_it+1)])
+
         else:
-            mu_r = np.zeros_like(self.data[idx]["mu"])
-        if os.path.exists(u.file(u.c_r_path, idx, it)):
-            c_r = np.load(u.file(u.c_r_path, idx, it))
-        else:
-            c_r = np.zeros_like(self.data[idx]["c"])
+            if os.path.exists(u.file(u.mu_r_path, idx, it)):
+                mu_r = np.load(u.file(u.mu_r_path, idx, it))
+            else:
+                mu_r = np.zeros_like(self.data[idx]["mu"])
+
+            if os.path.exists(u.file(u.c_r_path, idx, it)):
+                c_r = np.load(u.file(u.c_r_path, idx, it))
+            else:
+                c_r = np.zeros_like(self.data[idx]["c"])
+
         self.data[idx].update({"mu_r": mu_r, "c_r": c_r})
         return self.data[idx]
+
