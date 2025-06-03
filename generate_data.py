@@ -6,6 +6,7 @@ import time
 import numpy as np
 from v_system.VSystemGenerator import VSystemGenerator
 import scipy.ndimage
+from dm_pix import rotate
 from perlin_numpy import generate_perlin_noise_3d, generate_perlin_noise_2d
 
 from jwave import FourierSeries
@@ -142,6 +143,20 @@ def attenuation_mask_directional_2d(angle, volume, dx, attenuation, r):
 attenuation_mask_directional_2d_vmap = vmap(
     attenuation_mask_directional_2d, in_axes=(0, None, None, None, None)
 )
+
+
+@jit
+def illuminate_2d(mu, angle, attenuation):
+    angle = jnp.deg2rad(angle)
+    im = rotate(jnp.expand_dims(mu, -1), -angle)
+    im = jnp.cumsum(im, axis=0)
+    im = rotate(im, angle)
+    im = mu * jnp.exp(-attenuation * im.squeeze())
+
+    return im
+
+
+illuminate_2d_vmap = vmap(illuminate_2d, in_axes=(None, 0, None))
 
 
 @jit
@@ -287,7 +302,8 @@ def generate_2d_data(mu):
 
     mu = pad_0_wrapper(mu, TISSUE_MARGIN)
 
-    P_0 = ATT_masks * mu
+    P_0 = illuminate_2d_vmap(mu, angles, u.ATTENUATION)
+    # P_0 = ATT_masks * mu
 
     # Sound speed
     # ----------------------

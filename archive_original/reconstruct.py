@@ -8,6 +8,7 @@ from typing import Any
 from functools import partial
 from typing import TypeVar, Mapping
 import numpy as np
+from time import time
 
 import jax
 from jax import random
@@ -36,6 +37,7 @@ from jaxdf.operators.differential import laplacian, gradient, diag_jacobian
 from jaxdf.operators.functions import compose, sum_over_dims
 
 import util as u
+import generate_data as gd
 from PADataset import PADataset
 
 jax.clear_caches()
@@ -151,6 +153,9 @@ def print_net(net, shapes, extra_args={}):
             compute_vjp_flops=True)
         )
 
+def clip_grads(grads, clip_value=1.0):
+                    return jax.tree.map(lambda g: jnp.clip(g, -clip_value, clip_value), grads)
+
 if u.DIMS == 2:
     N = u.N[:2]
     DX = u.DX[:2]
@@ -179,7 +184,7 @@ def get_sound_speed(params):
     """
     Get the sound speed from the parameterized field.
     """
-    return 1420.0 + 150.0*compose(params)(nn.sigmoid)
+    return 1420.0 + 140.0*compose(params)(nn.sigmoid)
 
 def get_mu(params):
     """
@@ -210,7 +215,17 @@ def anisotropic_diffusion(u, stagger=[0.5]):
     c = conductivity_kernel(mod_gradient)
     return divergence(c * grad_u, stagger=[-0.5])
 
-
+def create_saving_fn(mu, c, losses, mu_rs, c_rs):
+    def save_progress(loss_data, mu_p, c_p):       
+        mu_r = get_mu(mu_p)
+        c_r = get_sound_speed(c_p) 
+        losses["data"].append(float(loss_data))
+        mu_rs.append(mu_r.squeeze())
+        c_rs.append(c_r.on_grid.squeeze())
+        losses["c"].append(float(mse(c_rs[-1], c) / jnp.mean(c)))
+        losses["mu"].append(float(mse(mu_rs[-1], mu) / jnp.mean(mu)))
+        losses["sum_mu_c"].append(float(losses["c"][-1] + losses["mu"][-1]))
+    return save_progress
 # --------------------------------------------
 # Network definitions
 # --------------------------------------------
@@ -223,6 +238,11 @@ class ConvBlock(nn.Module):
     @nn.compact
     def __call__(self, x):
         x = nn.Conv(features=self.features, kernel_size=(3, 3), padding="SAME", kernel_init=nn.initializers.he_normal())(x)
+        
+        # mode='fan_out', distribution='truncated_normal'))(x)
+
+        # x = nn.Conv(features=self.features, kernel_size=(3, 3), padding="SAME", kernel_init=nn.initializers.constant(.1))(x)
+
         x = nn.BatchNorm(use_running_average=not self.train)(x)
         x = getattr(nn, self.activation)(x)
         x = nn.Dropout(rate=self.dropout)(x, deterministic=not self.train)
@@ -410,6 +430,53 @@ class TreeNet_P0(nn.Module):
     
         return o
    
+# class YNet(nn.Module):
+#     """
+#     This network combines 2 fields into a single field output using skip connections. All fields must have the same batch size. As a convention, the expected fields are:
+#     x0: d_mu
+#     x1: d_c
+
+#     output: the modified gradient d_c_r
+#     """
+#     features: int
+#     dropout: float
+#     activation: str = "relu"
+
+#     @nn.compact
+#     def __call__(self, x0, x1, train: bool = True):
+#         f = self.features
+#         Encoder = partial(
+#             EncoderBlock, dropout=self.dropout, activation=self.activation, train=train
+#         )
+#         Conver = partial(
+#             ConvBlock, dropout=self.dropout, activation=self.activation, train=train
+#         )
+#         Decoder = partial(
+#             DecoderBlock, dropout=self.dropout, activation=self.activation, train=train
+#         )
+
+#         e0_1 = Encoder(features=f * 2)(x0)
+#         e0_2 = Encoder(features=f * 4)(e0_1)    
+#         e0_3 = Encoder(features=f * 8)(e0_2)
+
+#         e1_1 = Encoder(features=f * 2)(x1)
+#         e1_2 = Encoder(features=f * 4)(e1_1)
+#         e1_3 = Encoder(features=f * 8)(e1_2)
+        
+#         c = jnp.concatenate([e0_3, e1_3], axis=-1)
+
+#         c = Conver(features=f * 8)(c)
+#         c = Conver(features=f * 8)(c)
+
+#         d2 = Decoder(features=f * 4)(c)
+#         d2 = jnp.concatenate([d2, e0_2, e1_2], axis=-1)
+#         d1 = Decoder(features=f * 2)(d2)
+#         d1 = jnp.concatenate([d1, e0_1, e1_1], axis=-1)
+#         d0 = Decoder(features=f)(d1)
+
+#         o0 = nn.Conv(features=1, kernel_size=(1, 1), padding="SAME")(d0)
+
+#         return o0
 class YNet(nn.Module):
     """
     This network combines 2 fields into a single field output using skip connections. All fields must have the same batch size. As a convention, the expected fields are:
@@ -437,23 +504,28 @@ class YNet(nn.Module):
 
         e0_1 = Encoder(features=f * 2)(x0)
         e0_2 = Encoder(features=f * 4)(e0_1)    
-        e0_3 = Encoder(features=f * 8)(e0_2)
+        # e0_3 = Encoder(features=f * 8)(e0_2)
 
         e1_1 = Encoder(features=f * 2)(x1)
         e1_2 = Encoder(features=f * 4)(e1_1)
-        e1_3 = Encoder(features=f * 8)(e1_2)
+        # e1_3 = Encoder(features=f * 8)(e1_2)
         
-        c = jnp.concatenate([e0_3, e1_3], axis=-1)
+        c = jnp.concatenate([e0_2, e1_2], axis=-1)
+        c = Conver(features=f * 4)(c)
+        c = Conver(features=f * 4)(c)
+        # c = jnp.concatenate([e0_3, e1_3], axis=-1)
+        # c = Conver(features=f * 8)(c)
+        # c = Conver(features=f * 8)(c)
 
-        c = Conver(features=f * 8)(c)
-        c = Conver(features=f * 8)(c)
 
-        d2 = Decoder(features=f * 4)(c)
-        d2 = jnp.concatenate([d2, e0_2, e1_2], axis=-1)
-        d1 = Decoder(features=f * 2)(d2)
+        # d2 = Decoder(features=f * 4)(c)
+        # d2 = jnp.concatenate([d2, e0_2, e1_2], axis=-1)
+        # d1 = Decoder(features=f * 2)(d2)
+
+        d1 = Decoder(features=f * 2)(c)
         d1 = jnp.concatenate([d1, e0_1, e1_1], axis=-1)
         d0 = Decoder(features=f)(d1)
-
+    
         o0 = nn.Conv(features=1, kernel_size=(1, 1), padding="SAME")(d0)
 
         return o0
@@ -574,6 +646,41 @@ class StepNet(nn.Module):
 
         return o0, o1
     
+class RegNet(nn.Module):
+    """
+    Encode down to a single number.
+    """
+    features: int
+    dropout: float
+    activation: str = "relu"
+    train: bool = True
+
+    @nn.compact
+    def __call__(self, x0, x1, train: bool = True):
+        f = self.features
+        Encoder = partial(
+            EncoderBlock,
+            dropout=self.dropout,
+            activation=self.activation,
+            train=self.train,
+        )
+
+
+        c = jnp.concatenate([x0, x1], axis=-1)
+
+        x = Encoder(features=f * 2)(c)
+        x = Encoder(features=f * 4)(x)
+        x = Encoder(features=f * 8)(x)    
+        x = Encoder(features=f * 16)(x)    
+        x = Encoder(features=f * 32)(x)    
+        x = Encoder(features=f * 64)(x)    
+
+        x = jnp.mean(x, axis=(1, 2), keepdims=True)
+
+        x = nn.Dense(features=1)(x)
+
+        return x
+    
 # --------------------------------------------
 # Initialize Network and train state
 # --------------------------------------------
@@ -622,7 +729,7 @@ def create_train_state(
             params=variables["params"],
             tx=tx,
             batch_stats=batch_stats,
-            key=keys[step] 
+            key=keys[step]
         )
 
         states.append(train_state)
@@ -630,14 +737,475 @@ def create_train_state(
     return states
 # --------------------------------------------
 features_0 = 32
+# R = RegNet(features=features_0, dropout=u.DROPOUT, activation="relu")
+R = YNet(features=features_0, dropout=u.DROPOUT, activation="relu")
 # R = StepNet(features=features_0, dropout=0.1, activation="elu", network=ConcatNet)
 # R_mu = YNet(features=features_0, dropout=u.DROPOUT, activation="relu")
-# R = YNet(features=features_0, dropout=u.DROPOUT, activation="relu")
-R = TreeNet(features=features_0, dropout=u.DROPOUT, activation="relu")
+# R = TreeNet(features=features_0, dropout=u.DROPOUT, activation="relu")
 # --------------------------------------------
 
 
-def train_r_c(num_illum=4, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, cont=False):
+def train_r_mu_c(num_illum=10, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, cont=False):
+    """
+    Train the c regularizer. Writes the reconstruction results and last 4 checkpoints to disk.
+
+    Args:
+        num_illum (int): Number of illuminations to use. Default is 4.
+        lr (list): Learning rates for mu and c. Default is [u.LR_MU_R, u.LR_C_R].
+        num_it (int): Number of iterations. Default is u.RECON_ITERATIONS.
+        cont (bool): Continue training from the latest checkpoint. Default is False.
+
+    Returns:
+        None
+    """
+    global exit_flag
+    jax.clear_caches()
+
+    key = random.PRNGKey(59)
+    key, key_train_state = random.split(key)
+
+    dataset = PADataset()
+
+    state_r = create_train_state(
+        key_train_state,
+        R,
+        learning_rate=u.LR_R_C,
+        shapes=[im_shape, im_shape],
+        # shapes=[im_shape, im_shape, im_shape, im_shape],
+        num_steps=num_it
+    )
+
+    # Checkpoint restore
+    # ------------------
+    checkpoint_path = u.checkpoints_path
+
+    latest_step = get_latest_checkpoint_step(checkpoint_path)
+    if cont and latest_step is not None:
+        try:
+            restored = restore_state(checkpoint_path, latest_step)
+            # state_r_mu = restored["r_mu"]
+            state_r = restored["r"]
+            # losses_batch = restored["losses"]
+            
+            print(f"Restored checkpoint {checkpoint_path}/{latest_step}")
+        except Exception as e:
+            print(f"Couldn't load checkpoint {checkpoint_path}/{latest_step}\n Run again without -c flag to start from scratch")
+            print(f"Error: {e}")
+            exit_flag = True
+    else:
+        shutil.rmtree(checkpoint_path, ignore_errors=True)
+        os.makedirs(checkpoint_path, exist_ok=True)
+        print("Created empty checkpoint folder")
+        losses_batch= defaultdict(dict)
+
+    # ------------------
+
+    start = latest_step if cont else u.TRAIN_FILE_START
+    for file_index in range(start, u.TRAIN_FILE_END):
+        if exit_flag:
+            break
+
+        # Illumination angles
+        # -------------------
+        num_angles = dataset.num_angles
+        illum_indices = np.linspace(0, num_angles, num_illum, endpoint=False).astype(int)  if num_illum < np.inf else np.array(range(num_angles))
+        data = dataset[(file_index, illum_indices)]
+        print(f"illumination angles: {data["angles"]}")
+        # -------------------
+
+        j = data["file_idx"]
+        mu = data["mu"]
+        ATT_masks = FourierSeries(data["ATT_masks"], domain)
+        c = data["c"]
+        P_data = data["P_data"]
+        angles = data["angles"]
+
+        losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
+        recon = defaultdict(dict)
+
+        c_p = FourierSeries(jnp.zeros(im_shape)-5, domain) 
+        mu_p = jnp.zeros(im_shape)+1 
+
+        opt_mu = optax.adam(learning_rate=lr[0])
+        opt_c = optax.adam(learning_rate=lr[1])
+        opt_mu_state = opt_mu.init(mu_p)
+        opt_c_state = opt_c.init(c_p)
+
+        mu_rs = []
+        c_rs = []
+
+       
+        for i in range(num_it):
+            
+            loss_data, d_mu_p, d_c_p = recon_step_illum2(mu_p, c_p, angles, P_data)
+
+            
+            def loss_fn(r_c_p, r_mu_p, mu_p, d_mu_p, c_p, d_c_p, opt_c_state, batch_stats):
+                d_c_p, updates = state_r[i].apply_fn(
+                    {'params': r_c_p, 'batch_stats': batch_stats},
+                    c_p.on_grid,
+                    d_c_p.on_grid,
+                    train=True,
+                    rngs={"dropout": key},
+                    mutable=["batch_stats"]
+                )
+
+                d_mu_p, updates = state_r[i].apply_fn(
+                    {'params': r_mu_p, 'batch_stats': batch_stats},
+                    mu_p,
+                    d_mu_p,
+                    train=True,
+                    rngs={"dropout": key},
+                    mutable=["batch_stats"]
+                )
+
+
+
+                updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
+                mu_p = optax.apply_updates(mu_p, updates_mu)
+                mu_r = get_mu(mu_p)
+
+                updates_c, opt_c_state = opt_c.update(d_c_p, opt_c_state)
+                c_p = optax.apply_updates(c_p, updates_c)
+
+                c_r = get_sound_speed(c_p)
+
+                loss_r = mse(c_r.on_grid, c)
+
+                return loss_r, (c_r, c_p, opt_c_state, updates)
+
+            (loss_r, (c_r, c_p, opt_c_state, updates)), d_r_p = value_and_grad(loss_fn, (0), has_aux=True)(state_r[i].params, mu_p, d_mu_p, c_p, d_c_p, opt_c_state, state_r[i].batch_stats)
+
+            state_r[i] = state_r[i].apply_gradients(grads=d_r_p, batch_stats=updates)    
+        
+            print(f"loss_r: {loss_r:.4f}")
+
+            losses["data"].append(float(loss_data))
+            mu_rs.append(mu_r.squeeze())
+            c_rs.append(c_r.on_grid.squeeze())
+            losses["c"].append(float(mse(c_rs[-1], c)/jnp.mean(c)))
+            losses["mu"].append(float(mse(mu_rs[-1], mu)/jnp.mean(mu)))
+            losses["sum_mu_c"].append(float(losses["c"][-1] + losses["mu"][-1]))
+        
+        recon["mu_rs"] = mu_rs
+        recon["c_rs"] = c_rs
+        losses[j] = losses
+        save_recon(j, recon)
+        print_recon_losses(j, losses)
+
+        state={"state_r": state_r, "losses_batch": losses_batch}
+
+        save_state(checkpoint_path, file_index, state, keep=4)
+
+def train_r_c1(num_illum=4, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, cont=False):
+    """
+    Train the c regularizer. Writes the reconstruction results and last 4 checkpoints to disk.
+
+    Args:
+        num_illum (int): Number of illuminations to use. Default is 4.
+        lr (list): Learning rates for mu and c. Default is [u.LR_MU_R, u.LR_C_R].
+        num_it (int): Number of iterations. Default is u.RECON_ITERATIONS.
+        cont (bool): Continue training from the latest checkpoint. Default is False.
+
+    Returns:
+        None
+    """
+    global exit_flag
+    jax.clear_caches()
+
+    key = random.PRNGKey(59)
+    key, key_train_state = random.split(key)
+
+    dataset = PADataset()
+
+    state_r = create_train_state(
+        key_train_state,
+        R,
+        learning_rate=u.LR_R_C,
+        # shapes=[im_shape],
+        shapes=[im_shape, im_shape],
+        # shapes=[im_shape, im_shape, im_shape, im_shape],
+        num_steps=num_it
+    )
+
+    # Checkpoint restore
+    # ------------------
+    checkpoint_path = u.checkpoints_path
+
+    latest_step = get_latest_checkpoint_step(checkpoint_path)
+    if cont and latest_step is not None:
+        try:
+            restored = restore_state(checkpoint_path, latest_step)
+            # state_r_mu = restored["r_mu"]
+            state_r = restored["r"]
+            # losses_batch = restored["losses"]
+            
+            print(f"Restored checkpoint {checkpoint_path}/{latest_step}")
+        except Exception as e:
+            print(f"Couldn't load checkpoint {checkpoint_path}/{latest_step}\n Run again without -c flag to start from scratch")
+            print(f"Error: {e}")
+            exit_flag = True
+    else:
+        shutil.rmtree(checkpoint_path, ignore_errors=True)
+        os.makedirs(checkpoint_path, exist_ok=True)
+        print("Created empty checkpoint folder")
+        losses_batch= defaultdict(dict)
+
+    # ------------------
+
+    start = latest_step if cont else u.TRAIN_FILE_START
+    for file_index in range(start, u.TRAIN_FILE_END):
+        if exit_flag:
+            break
+
+        # Illumination angles
+        # -------------------
+        num_angles = dataset.num_angles
+        illum_indices = np.linspace(0, num_angles, num_illum, endpoint=False).astype(int)  if num_illum < np.inf else np.array(range(num_angles))
+        data = dataset[(file_index, illum_indices)]
+        print(f"illumination angles: {data["angles"]}")
+        # -------------------
+
+        j = data["file_idx"]
+        mu = data["mu"]
+        ATT_masks = FourierSeries(data["ATT_masks"], domain)
+        c = data["c"]
+        P_data = data["P_data"]
+        angles = data["angles"]
+
+        losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
+        recon = defaultdict(dict)
+
+        c_p = FourierSeries(jnp.zeros(im_shape)-1.3, domain) 
+        mu_p = jnp.zeros(im_shape)+1 
+
+        opt_mu = optax.adam(learning_rate=lr[0])
+        opt_c = optax.adam(learning_rate=lr[1])
+        opt_mu_state = opt_mu.init(mu_p)
+        opt_c_state = opt_c.init(c_p)
+
+        mu_rs = []
+        c_rs = []
+
+        def loss_rec(r_c_p, mu_p, c_p, state_r, key):
+            mu_r = get_mu(mu_p)
+            c_r = get_sound_speed(c_p)
+            P0 = gd.illuminate_2d_vmap(mu_r.squeeze(), angles,u.ATTENUATION)
+            P0=FourierSeries(jnp.expand_dims(P0,-1), domain)
+            medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
+            P_pred = batch_compiled_simulate(medium, time_axis, P0)
+
+            key, key1 = random.split(key)
+
+            lR, updates = state_r.apply_fn(
+                        {'params': r_c_p, 'batch_stats': state_r.batch_stats},
+                        c_p.on_grid,
+                        mu_p,
+                        train=True,
+                        rngs={"dropout": key1},
+                        mutable=["batch_stats"]
+                    )
+
+            return mse(P_pred.squeeze(), P_data) + lR.squeeze(), updates
+
+        for i in range(num_it):
+            
+            def loss_fn(r_c_p, mu_p, c_p, opt_mu_state, opt_c_state, state_r):
+
+                (loss_data, updates), (d_mu_p, d_c_p) = value_and_grad(loss_rec, (1, 2), has_aux=True)(r_c_p, mu_p, c_p, state_r, key)
+
+
+                updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
+                mu_p = optax.apply_updates(mu_p, updates_mu)
+                
+                updates_c, opt_c_state = opt_c.update(d_c_p, opt_c_state)
+                c_p = optax.apply_updates(c_p, updates_c)
+
+                mu_r = get_mu(mu_p)
+                c_r = get_sound_speed(c_p)
+                
+                loss_r = mse(c_r.on_grid, c) + mse(mu_r, mu)
+
+                return loss_r, (c_r, mu_p, c_p, mu_r, c_r, opt_mu_state, opt_c_state, updates, loss_data)
+
+            (loss_r, (c_r, mu_p, c_p, mu_r, c_r, opt_mu_state, opt_c_state, updates, loss_data)), d_r_p = value_and_grad(loss_fn, (0), has_aux=True)(state_r[i].params, mu_p, c_p, opt_mu_state, opt_c_state, state_r[i])
+
+            state_r[i] = state_r[i].apply_gradients(grads=d_r_p, batch_stats=updates)    
+        
+            print(f"loss_r: {loss_r:.4f}")
+
+
+            losses["data"].append(float(loss_data))
+            mu_rs.append(mu_r.squeeze())
+            c_rs.append(c_r.on_grid.squeeze())
+            losses["c"].append(float(mse(c_rs[-1], c)/jnp.mean(c)))
+            losses["mu"].append(float(mse(mu_rs[-1], mu)/jnp.mean(mu)))
+            losses["sum_mu_c"].append(float(losses["c"][-1] + losses["mu"][-1]))
+        
+        recon["mu_rs"] = mu_rs
+        recon["c_rs"] = c_rs
+        losses[j] = losses
+        save_recon(j, recon)
+        print_recon_losses(j, losses)
+
+        state={"state_r": state_r, "losses_batch": losses_batch}
+
+        save_state(checkpoint_path, file_index, state, keep=4)
+
+def train_r_c(num_illum=20, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, cont=False):
+    """
+    Train the c regularizer. Writes the reconstruction results and last 4 checkpoints to disk.
+
+    Args:
+        num_illum (int): Number of illuminations to use. Default is 4.
+        lr (list): Learning rates for mu and c. Default is [u.LR_MU_R, u.LR_C_R].
+        num_it (int): Number of iterations. Default is u.RECON_ITERATIONS.
+        cont (bool): Continue training from the latest checkpoint. Default is False.
+
+    Returns:
+        None
+    """
+    global exit_flag
+    jax.clear_caches()
+
+    key = random.PRNGKey(59)
+    key, key_train_state = random.split(key)
+
+    dataset = PADataset()
+
+    pre_it = 5
+
+    state_r = create_train_state(
+        key_train_state,
+        R,
+        learning_rate=u.LR_R_C,
+        # shapes=[im_shape],
+        shapes=[im_shape, im_shape],
+        # shapes=[im_shape, im_shape, im_shape, im_shape],
+        num_steps=num_it-pre_it
+    )
+
+    # Checkpoint restore
+    # ------------------
+    checkpoint_path = u.checkpoints_path
+
+    latest_step = get_latest_checkpoint_step(checkpoint_path)
+    if cont and latest_step is not None:
+        try:
+            restored = restore_state(checkpoint_path, latest_step)
+            # state_r_mu = restored["r_mu"]
+            state_r = restored["r"]
+            # losses_batch = restored["losses"]
+            
+            print(f"Restored checkpoint {checkpoint_path}/{latest_step}")
+        except Exception as e:
+            print(f"Couldn't load checkpoint {checkpoint_path}/{latest_step}\n Run again without -c flag to start from scratch")
+            print(f"Error: {e}")
+            exit_flag = True
+    else:
+        shutil.rmtree(checkpoint_path, ignore_errors=True)
+        os.makedirs(checkpoint_path, exist_ok=True)
+        print("Created empty checkpoint folder")
+        losses_batch= defaultdict(dict)
+
+    # ------------------
+
+    start = latest_step if cont else u.TRAIN_FILE_START
+    for file_index in range(start, u.TRAIN_FILE_END):
+        if exit_flag:
+            break
+
+        # Illumination angles
+        # -------------------
+        num_angles = dataset.num_angles
+        illum_indices = np.linspace(0, num_angles, num_illum, endpoint=False).astype(int)  if num_illum < np.inf else np.array(range(num_angles))
+        data = dataset[(file_index, illum_indices)]
+        print(f"illumination angles: {data["angles"]}")
+        # -------------------
+
+        j = data["file_idx"]
+        mu = data["mu"]
+        c = data["c"]
+        P_data = data["P_data"]
+        angles = data["angles"]
+
+        losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
+        recon = defaultdict(dict)
+
+
+        c_p = FourierSeries(jnp.zeros(im_shape)-1.3, domain) 
+        mu_p = jnp.zeros(im_shape)+1 
+
+        opt_mu = optax.adam(learning_rate=lr[0])
+        opt_c = optax.adam(learning_rate=lr[1])
+        opt_mu_state = opt_mu.init(mu_p)
+        opt_c_state = opt_c.init(c_p)
+
+        mu_rs = []
+        c_rs = []
+        save_progress = create_saving_fn(mu, c, losses, mu_rs, c_rs)
+
+        for i in range(pre_it):
+            loss_data, d_mu_p, d_c_p = recon_step_illum2(mu_p, c_p, angles, P_data)
+        
+            updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
+            mu_p = optax.apply_updates(mu_p, updates_mu)
+
+            updates_c, opt_c_state = opt_c.update(d_mu_p, opt_c_state)
+            c_p = optax.apply_updates(c_p, updates_c)
+            
+            save_progress(loss_data, mu_p, c_p)
+
+
+        
+
+        for i in range(num_it-pre_it):
+            
+            loss_data, d_mu_p, d_c_p = recon_step_illum2(mu_p, c_p, angles, P_data)
+
+            
+            def loss_fn(r_p, c_p, d_c_p, opt_c_state, mu_p, d_mu_p, opt_mu_state, batch_stats):
+                d_c_p_2, updates = state_r[i].apply_fn(
+                    {'params': r_p, 'batch_stats': batch_stats},
+                    d_mu_p,
+                    # c_p.on_grid,
+                    d_c_p.on_grid,
+                    train=True,
+                    rngs={"dropout": key},
+                    mutable=["batch_stats"]
+                )
+
+                updates_c, opt_c_state = opt_c.update(d_c_p + d_c_p_2, opt_c_state)
+                c_p = optax.apply_updates(c_p, updates_c)
+                c_r = get_sound_speed(c_p)
+
+                updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
+                mu_p = optax.apply_updates(mu_p, updates_mu)
+                mu_r = get_mu(mu_p)
+                
+                loss_r = mse(c_r.on_grid, c) + mse(mu_r, mu)
+
+                return loss_r, (c_p, opt_c_state, mu_p, opt_mu_state, updates)
+
+            (loss_r, (c_p, opt_c_state, mu_p, opt_mu_state, updates)), d_r_p = value_and_grad(loss_fn, (0), has_aux=True)(state_r[i].params, c_p, d_c_p, opt_c_state, mu_p, d_mu_p, opt_mu_state, state_r[i].batch_stats)
+
+            state_r[i] = state_r[i].apply_gradients(grads=d_r_p, batch_stats=updates)    
+        
+            
+            print(f"loss_r: {loss_r:.4f}")
+            save_progress(loss_data, mu_p, c_p)
+        
+        recon["mu_rs"] = mu_rs
+        recon["c_rs"] = c_rs
+        losses[j] = losses
+        save_recon(j, recon)
+        print_recon_losses(j, losses)
+
+        state={"state_r": state_r, "losses_batch": losses_batch}
+
+        save_state(checkpoint_path, file_index, state, keep=4)
+
+def train_r_c0(num_illum=4, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, cont=False):
     """
     Train the c regularizer. Writes the reconstruction results and last 4 checkpoints to disk.
 
@@ -709,6 +1277,7 @@ def train_r_c(num_illum=4, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, 
         ATT_masks = FourierSeries(data["ATT_masks"], domain)
         c = data["c"]
         P_data = data["P_data"]
+        angles = data["angles"]
 
         losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
         recon = defaultdict(dict)
@@ -723,19 +1292,10 @@ def train_r_c(num_illum=4, lr=[u.LR_MU_R, u.LR_C_R], num_it=u.RECON_ITERATIONS, 
 
         mu_rs = []
         c_rs = []
-
-        # @jit
-        def loss_rec(mu_p, c_p):
-            mu_r = get_mu(mu_p)
-            c_r = get_sound_speed(c_p)
-            P0 = mu_r * ATT_masks
-            medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
-            P_pred = batch_compiled_simulate(medium, time_axis, P0)
-            return mse(P_pred.squeeze(), P_data)
-        
+      
         for i in range(num_it):
             
-            loss_data, (d_mu_p, d_c_p) = value_and_grad(loss_rec, (0, 1))(mu_p, c_p)
+            loss_data, d_mu_p, d_c_p = recon_step_illum2(mu_p, c_p, angles, P_data)
 
             updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
             mu_p = optax.apply_updates(mu_p, updates_mu)
@@ -812,11 +1372,97 @@ def recon_step(mu_p, c_p, ATT_masks, P_data):
         P0 = mu_r * ATT_masks
         medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
         P_pred = batch_compiled_simulate(medium, time_axis, P0)
+        return mse(P_pred.squeeze(), P_data) 
+    loss_data, (d_mu_p, d_c_p) = value_and_grad(loss_rec, (0, 1))(mu_p, c_p)
+    
+    return loss_data, d_mu_p, d_c_p
+
+def recon_step_illum2(mu_p, c_p, angles, P_data):
+    """
+    Data fidelity gradient calculation for the reconstruction.
+
+    Args:
+        mu_p (FourierSeries): Attenuation coefficient.
+        c_p (FourierSeries): Sound speed.
+        ATT_masks (FourierSeries): Attenuation masks.
+        P_data (jnp.array): Data to reconstruct.
+
+    Returns:
+        tuple: Loss and gradients.
+    """
+    def loss_rec(mu_p, c_p):
+        mu_r = get_mu(mu_p)
+        c_r = get_sound_speed(c_p)
+        P0 = gd.illuminate_2d_vmap(mu_r.squeeze(), angles,u.ATTENUATION)
+        P0=FourierSeries(jnp.expand_dims(P0,-1), domain)
+        medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
+        P_pred = batch_compiled_simulate(medium, time_axis, P0)
         return mse(P_pred.squeeze(), P_data)
     loss_data, (d_mu_p, d_c_p) = value_and_grad(loss_rec, (0, 1))(mu_p, c_p)
     
     return loss_data, d_mu_p, d_c_p
 
+def recon_step_illum2_r(mu_p, c_p, angles, P_data, l2_alpha=0.000001, c_alpha=0.000001):
+    """
+    Data fidelity gradient calculation for the reconstruction.
+
+    Args:
+        mu_p (FourierSeries): Attenuation coefficient.
+        c_p (FourierSeries): Sound speed.
+        ATT_masks (FourierSeries): Attenuation masks.
+        P_data (jnp.array): Data to reconstruct.
+
+    Returns:
+        tuple: Loss and gradients.
+    """
+    def loss_rec(mu_p, c_p):
+        mu_r = get_mu(mu_p)
+        c_r = get_sound_speed(c_p)
+        P0 = gd.illuminate_2d_vmap(mu_r.squeeze(), angles,u.ATTENUATION)
+        P0=FourierSeries(jnp.expand_dims(P0,-1), domain)
+        medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
+        P_pred = batch_compiled_simulate(medium, time_axis, P0)
+        return mse(P_pred.squeeze(), P_data) + l2_loss(mu_p, l2_alpha) + c_alpha * mse(c_r.on_grid, jnp.ones(N)*u.C)
+    loss_data, (d_mu_p, d_c_p) = value_and_grad(loss_rec, (0, 1))(mu_p, c_p)
+    
+    return loss_data, d_mu_p, d_c_p
+
+def recon_step_illum2_R(mu_p, c_p, angles, P_data):
+    """
+    Data fidelity gradient calculation for the reconstruction.
+
+    Args:
+        mu_p (FourierSeries): Attenuation coefficient.
+        c_p (FourierSeries): Sound speed.
+        ATT_masks (FourierSeries): Attenuation masks.
+        P_data (jnp.array): Data to reconstruct.
+
+    Returns:
+        tuple: Loss and gradients.
+    """
+    def loss_rec(mu_p, c_p, state_r, r_c_p, batch_stats, key):
+        mu_r = get_mu(mu_p)
+        c_r = get_sound_speed(c_p)
+        P0 = gd.illuminate_2d_vmap(mu_r.squeeze(), angles,u.ATTENUATION)
+        P0=FourierSeries(jnp.expand_dims(P0,-1), domain)
+        medium = Medium(domain=domain, sound_speed=c_r[0], pml_size=u.PML_MARGIN[0])
+        P_pred = batch_compiled_simulate(medium, time_axis, P0)
+
+        key, key1 = random.split(key)
+
+        lR = state_r.apply_fn(
+                    {'params': r_c_p, 'batch_stats': batch_stats},
+                    c_p.on_grid,
+                    d_c_p.on_grid,
+                    train=True,
+                    rngs={"dropout": key1},
+                    mutable=["batch_stats"]
+                )
+
+        return mse(P_pred.squeeze(), P_data) + lR
+    loss_data, (d_mu_p, d_c_p) = value_and_grad(loss_rec, (0, 1))(mu_p, c_p)
+    
+    return loss_data, d_mu_p, d_c_p
 
 def recon_2opt_r(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num_it=u.RECON_ITERATIONS, func_step_kwargs={}):
     """
@@ -905,7 +1551,7 @@ def recon_2opt_r(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, n
 
     return losses, recon
 
-def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num_it=u.RECON_ITERATIONS, func_step_kwargs={}):
+def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num_it=u.RECON_ITERATIONS, time_limit = None, func_step_kwargs={}):
     """
     Calls a reconstruction function using 2 optimizers and gradient sharing. Optionally, it can be limited to a number of illuminations.
 
@@ -923,6 +1569,7 @@ def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num
     Returns:
         tuple: Reconstruction losses and results.
     """
+    time_start = time()
     jax.clear_caches()
     num_angles = dataset.num_angles
     illum_indices = np.linspace(0, num_angles, num_illum, endpoint=False).astype(int)  if num_illum < np.inf else np.array(range(num_angles))
@@ -932,6 +1579,7 @@ def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num
 
     j = data["file_idx"]
     mu = data["mu"]
+    angles = data["angles"]
     ATT_masks = FourierSeries(data["ATT_masks"], domain)
     c = data["c"]
     P_data = data["P_data"]
@@ -939,8 +1587,9 @@ def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num
     losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
     recon = defaultdict(dict)
 
-    c_p = FourierSeries(jnp.zeros(im_shape)-5, domain) 
-    mu_p = FourierSeries(jnp.zeros(im_shape)+1, domain) 
+    c_p = FourierSeries(jnp.zeros(im_shape)-4.5, domain) 
+    mu_p = jnp.zeros(im_shape)+1 
+    # mu_p = FourierSeries(jnp.zeros(im_shape)+1, domain) 
 
     opt_mu = optax.adam(learning_rate=lr[0])
     opt_c = optax.adam(learning_rate=lr[1])
@@ -951,10 +1600,14 @@ def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num
     c_rs = []
 
     for i in range(num_it):
+        time_diff = time() - time_start
+        if time_limit is not None and time_diff > time_limit:
+            print(f"Time limit exceeded: {time_diff:.2f} s")
+            break
 
-        loss_data, d_mu_p, d_c_p = func_step(mu_p, c_p, ATT_masks, P_data, **func_step_kwargs)
+        loss_data, d_mu_p, d_c_p = func_step(mu_p, c_p, angles, P_data, **func_step_kwargs)
 
-        updates_c, opt_c_state = opt_c.update(d_mu_p, opt_c_state) # Share gradients
+        updates_c, opt_c_state = opt_c.update(d_c_p, opt_c_state) 
         updates_mu, opt_mu_state = opt_mu.update(d_mu_p, opt_mu_state)
 
         c_p = optax.apply_updates(c_p, updates_c)
@@ -964,7 +1617,8 @@ def recon_2opt(dataset, file_index, func_step, lr=[1.,1.], num_illum=np.inf, num
         c_r = get_sound_speed(c_p)
 
         losses["data"].append(loss_data)
-        mu_rs.append(mu_r.on_grid.squeeze())
+        mu_rs.append(mu_r.squeeze())
+        # mu_rs.append(mu_r.on_grid.squeeze())
         c_rs.append(c_r.on_grid.squeeze())
         losses["c"].append(mse(c_rs[-1], c)/jnp.mean(c))
         losses["mu"].append(mse(mu_rs[-1], mu)/jnp.mean(mu))
@@ -1004,12 +1658,14 @@ def recon_1opt(dataset, file_index, func_step, lr=1., num_illum=np.inf, num_it=u
     ATT_masks = FourierSeries(data["ATT_masks"], domain)
     c = data["c"]
     P_data = data["P_data"]
+    angles = data["angles"]
 
     losses = {"data": [], "mu": [], "c": [], "sum_mu_c":[]}
     recon = defaultdict(dict)
 
     c_p = FourierSeries(jnp.zeros(im_shape)-5, domain) 
-    mu_p = FourierSeries(jnp.zeros(im_shape)+1, domain) 
+    mu_p = jnp.zeros(im_shape)+1 
+    # mu_p = FourierSeries(jnp.zeros(im_shape)+1, domain) 
 
     fields = (mu_p, c_p)
     opt = optax.adam(learning_rate=lr)
@@ -1020,9 +1676,11 @@ def recon_1opt(dataset, file_index, func_step, lr=1., num_illum=np.inf, num_it=u
 
     for i in range(num_it):
 
-        loss_data, d_mu_p, d_c_p = func_step(mu_p=fields[0], c_p=fields[1], ATT_masks=ATT_masks, P_data=P_data, **func_step_kwargs)
+        loss_data, d_mu_p, d_c_p = func_step(mu_p=fields[0], c_p=fields[1], angles=angles, P_data=P_data, **func_step_kwargs)
+        # loss_data, d_mu_p, d_c_p = func_step(mu_p=fields[0], c_p=fields[1], ATT_masks=ATT_masks, P_data=P_data, **func_step_kwargs)
 
-        updates_fields, opt_state = opt.update((d_mu_p, d_mu_p), opt_state) # Gradient sharing
+        updates_fields, opt_state = opt.update((d_mu_p, d_c_p), opt_state) # Gradient sharing
+        # updates_fields, opt_state = opt.update((d_mu_p, d_mu_p), opt_state) # Gradient sharing
         
         fields = optax.apply_updates(fields, updates_fields)
 
@@ -1030,7 +1688,7 @@ def recon_1opt(dataset, file_index, func_step, lr=1., num_illum=np.inf, num_it=u
         c_r = get_sound_speed(fields[1])
 
         losses["data"].append(loss_data)
-        mu_rs.append(mu_r.on_grid.squeeze())
+        mu_rs.append(mu_r.squeeze())
         c_rs.append(c_r.on_grid.squeeze())
         losses["c"].append(mse(c_rs[-1], c)/jnp.mean(c))
         losses["mu"].append(mse(mu_rs[-1], mu)/jnp.mean(mu))
@@ -1088,7 +1746,8 @@ def print_nets():
     """
     Print the network architectures.
     """
-    print_net(R, [im_shape, im_shape, im_shape, im_shape])
+    print_net(R, [im_shape, im_shape])
+    # print_net(R, [im_shape, im_shape, im_shape, im_shape])
     # print_net(model, [P0_shape, P0_shape, im_shape, im_shape])
 
 exit_flag = False
@@ -1111,13 +1770,13 @@ if __name__ == "__main__":
         train_r_c(cont=args.c)
     
     elif args.mode == "r1":
-        recon_batch(func_recon=recon_1opt, func_step=recon_step, num_it=args.iter, num_illum=4, func_step_kwargs={}, lr=1.)
+        recon_batch(func_recon=recon_1opt, func_step=recon_step_illum2, num_it=args.iter, num_illum=4, func_step_kwargs={}, lr=1.)
     
     elif args.mode == "r2":
-        recon_batch(func_recon=recon_2opt, func_step=recon_step, num_it=args.iter, num_illum=args.illum, func_step_kwargs={})
+        recon_batch(func_recon=recon_2opt, func_step=recon_step_illum2, num_it=args.iter, num_illum=args.illum, func_step_kwargs={})
 
     elif args.mode == "r3":
-        recon_batch(func_recon=recon_2opt_r, func_step=recon_step, num_it=args.iter, num_illum=args.illum, func_step_kwargs={})
+        recon_batch(func_recon=recon_2opt_r, func_step=recon_step_illum2, num_it=args.iter, num_illum=args.illum, func_step_kwargs={})
     
     elif args.mode == "p":
         print_nets()

@@ -1,8 +1,8 @@
 file:
-  data_path: data_4/
+  data_path: data_6/
 
 generate_data:
-  batch_size: 500
+  batch_size: 1000
   N: [128, 128, 128] # including margins. Use power of 2
   shrink_factor: 3
   dims: 2
@@ -20,20 +20,20 @@ generate_data:
 
 lighting:
   lighting_attenuation: True
-  num_lighting_angles: 4
-  attenuation: 300 # attenuation coefficient
+  num_lighting_angles: 20
+  attenuation: .05 # attenuation coefficient
 
 reconstruct:
   recon_iterations: 10
   lr_mu_r: 1.
-  lr_c_r: 1.
+  lr_c_r: .5
   recon_file_start: 0
   recon_file_end: 1
 
 train:
   checkpoint_index: 0
   lr_R_mu: .0005
-  lr_R_c: .0005
+  lr_R_c: .000000001
   dropout: 0.4
-  train_file_start: 350
-  train_file_end: 500
+  train_file_start: 0
+  train_file_end: 800
