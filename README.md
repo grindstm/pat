@@ -48,7 +48,7 @@ The codebase has been completely refactored into a modular architecture for bett
 
 ```
 PACT/
-├── src/                          # Main source code (modular architecture)
+├── src/                          # Main source code 
 │   ├── config/                   # Configuration management
 │   │   ├── parameters.py         # ConfigManager class and parameter handling
 │   │   └── validation.py         # Parameter validation and type checking
@@ -74,7 +74,7 @@ PACT/
 ├── generate_data.py              # Legacy data generation script (still used)
 ├── vis_*.ipynb                   # Visualization notebooks
 ├── vis.py                        # 3D visualization interface
-└── archive_original/             # Archived original files (optional)
+└── archive_original/             # Archived original files 
     ├── reconstruct.py            # Original monolithic reconstruction script
     ├── PADataset.py              # Original dataset class
     └── util.py                   # Original utility functions
@@ -82,9 +82,9 @@ PACT/
 
 ## 🛠️ Core Components
 
-- **`ConfigManager`**: Type-safe, validated parameter management
-- **`PADataset`**: Dataset class with caching and validation
-- **Synthetic data generation**: Vessel networks, illumination patterns, wave simulation
+- **`ConfigManager`**: Parameter management
+- **`PADataset`**: Dataset class
+- **Synthetic Data Generation**: `generate_data.py` Vessel networks, illumination patterns, wave simulation
 - **Visualization**: `src/visualization/`
 
 ### Neural Networks (`src/models/`)
