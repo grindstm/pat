@@ -42,7 +42,11 @@ class TrainState(train_state.TrainState):
     """
     key: jax.Array
     batch_stats: Any
-    losses: Dict = defaultdict(dict)
+    losses: Dict = None
+
+    def __post_init__(self):
+        if self.losses is None:
+            object.__setattr__(self, 'losses', defaultdict(dict))
 
 
 def create_train_state(

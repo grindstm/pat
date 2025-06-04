@@ -9,22 +9,26 @@ This repository contains a comprehensive, modular implementation for photoacoust
 ## Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.12
 - CUDA-compatible GPU (recommended: 12GB+ VRAM)
 - JAX with CUDA support
 
+### Notable Dependencies
+**V-System**: generating vessel structures in 2D and 3D. *modified and copied into this repository*. 
+[psweens/V-System: A project to create synthetic vascular networks utilising L-Systems.](https://github.com/psweens/V-System)
+
+**j-Wave**: a JAX-based wave simulation library. [ucl-bug/jwave: A JAX-based research framework for differentiable and parallelizable acoustic simulations, on CPU, GPUs and TPUs](https://github.com/ucl-bug/jwave)
+
 ### Installation
+This package uses [uv]. 
+
 ```bash
 # Clone the repository
 git clone https://github.com/grindstm/pat.git
 cd pat
 
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+uv install
+source venv/bin/activate
 ```
 
 ### Basic Usage
