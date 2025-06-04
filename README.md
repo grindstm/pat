@@ -82,17 +82,10 @@ PACT/
 
 ## 🛠️ Core Components
 
-### Configuration System (`src/config/`)
 - **`ConfigManager`**: Type-safe, validated parameter management
-- **Automatic validation**: Parameter ranges, types, and consistency checks
-- **Backward compatibility**: Same interface as original `util.py` globals
-- **Environment-specific configs**: Support for different experimental setups
-
-### Data Pipeline (`src/data/`)
-- **`PADataset`**: Enhanced dataset class with caching and validation
+- **`PADataset`**: Dataset class with caching and validation
 - **Synthetic data generation**: Vessel networks, illumination patterns, wave simulation
-- **Memory management**: Efficient loading and caching strategies
-- **Data integrity**: Validation and error recovery
+- **Visualization**: `src/visualization/`
 
 ### Neural Networks (`src/models/`)
 Available architectures:
@@ -109,15 +102,7 @@ Available architectures:
 - **`MultiParameterSolver`**: Simultaneous multi-parameter optimization
 - **Advanced optimizers**: Adaptive learning rates, early stopping, gradient clipping
 
-### Visualization (`src/visualization/`)
-- **Publication-quality plots**: Custom colormaps, comparison plots
-- **Animation creation**: Convergence visualization
-- **Interactive dashboards**: Real-time exploration of results
-- **3D visualization**: Volume rendering for 3D reconstructions
-
-## Command-Line Interface
-
-The new unified CLI (`pact_cli.py`) replaces the complex argument system of the original `reconstruct.py`:
+## Command-Line Interface (`pact_cli.py`)
 
 ### Data Generation
 ```bash
@@ -167,8 +152,6 @@ Options:
 ```
 
 ## ⚙️ Configuration (`params.yaml`)
-
-The configuration system has been enhanced with validation and type safety:
 
 ### Data Generation Parameters
 ```yaml
@@ -230,12 +213,6 @@ Standard optimization-based reconstruction:
 python pact_cli.py reconstruct --method gradient_descent --files 0-5 --iterations 50
 ```
 
-**Features:**
-- Data fidelity optimization
-- L2 and total variation regularization
-- Multiple illumination angle support
-- Configurable learning rates and schedules
-
 ### 2. Learned Regularization
 Neural network-based regularization:
 ```bash
@@ -246,23 +223,11 @@ python pact_cli.py train --model ynet --illuminations 10 --iterations 100
 python pact_cli.py reconstruct --method learned_regularization --files 0-5
 ```
 
-**Features:**
-- Neural network learns optimal regularization
-- Gradient modification for improved convergence
-- Supports multiple network architectures
-- Automatic checkpoint loading
-
 ### 3. Multi-Parameter Optimization
 Simultaneous reconstruction of multiple parameters:
 ```bash
 python pact_cli.py reconstruct --method multi_parameter --files 0-5 --iterations 100
 ```
-
-**Features:**
-- Joint optimization of absorption and sound speed
-- Alternating parameter updates
-- Cross-parameter regularization
-- Advanced optimization strategies
 
 ## 📊 Visualization and Analysis
 
@@ -342,6 +307,7 @@ If developing on this codebase or as a beginner in the JAX and j-Wave ecosystems
 
 ### Testing
 # Validate configuration
+```shell
 python -c "from src.config.parameters import create_default_config; create_default_config()"
 ```
 
@@ -350,26 +316,6 @@ python -c "from src.config.parameters import create_default_config; create_defau
 # Enable JAX profiling
 python pact_cli.py reconstruct --method gradient_descent --files 0 --verbose
 ```
-
-### Memory Management
-The system includes automatic memory management:
-- JAX cache clearing between operations
-- Configurable data caching in PADataset
-- Memory-efficient batch processing
-- GPU memory fraction control
-
-## 📈 Performance Considerations
-
-### Hardware Requirements
-- **Minimum**: 8GB GPU memory, 16GB RAM
-- **Recommended**: 12GB+ GPU memory, 32GB+ RAM
-- **Optimal**: Multi-GPU setup for large batch processing
-
-### Optimization Tips
-1. **Batch size**: Adjust based on available GPU memory
-2. **Caching**: Enable dataset caching for repeated access
-3. **Precision**: Use mixed precision for memory efficiency
-4. **Parallelization**: Leverage JAX's automatic parallelization
 
 ## 🤝 Contributing
 
@@ -381,15 +327,6 @@ If developing on this codebase or as a beginner in the JAX and j-Wave ecosystems
 3. **New loss functions**: Add to `src/models/losses.py`
 4. **New optimizers**: Add to `src/reconstruction/optimizers.py`
 
-## 📚 References
-
-### Key Dependencies
-- **JAX**: High-performance numerical computing
-- **Flax**: Neural network library for JAX
-- **j-Wave**: Wave simulation library
-- **Optax**: Optimization library for JAX
-- **jaxdf**: Differential operators for JAX
-
 ---
 
-**Note**: This refactored version maintains all original functionality while providing improved modularity, usability, and extensibility. The original files (`reconstruct.py`, `PADataset.py`, `util.py`) have been archived and can be found in the `archive_original/` directory.
+**Note**: This is a completely refactored version. The original files (`reconstruct.py`, `PADataset.py`, `util.py`) have been archived and can be found in the `archive_original/` directory.
